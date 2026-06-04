@@ -19,7 +19,7 @@ import java.util.UUID;
 public class UserService {
     private final UserRepository userRepository;
 
-    public UserOutput crate(UserInput input) {
+    public UserOutput create(UserInput input) {
         if (userRepository.existsByEmail(input.email())) {
             throw new BusinessException("Email já encontrado");
         }
