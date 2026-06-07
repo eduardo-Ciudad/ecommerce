@@ -59,6 +59,7 @@ public class ProductService {
         return toOutput(product);
     }
 
+    @Transactional
     public void delete(UUID id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado"));

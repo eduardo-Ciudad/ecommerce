@@ -50,7 +50,7 @@ public class CartService {
             throw new BusinessException("Produto inativo não pode ser adicionado ao carrinho");
         }
 
-        if (variant.getStock() == 0) {
+        if (variant.getStock() <= 0) {
             throw new BusinessException("Variante sem estoque");
         }
 
@@ -61,7 +61,11 @@ public class CartService {
 
         if (existingItemOpt.isPresent()) {
             CartItem existingItem = existingItemOpt.get();
-            existingItem.setQuantity(existingItem.getQuantity() + input.quantity());
+            int newQuantity = existingItem.getQuantity() + input.quantity();
+            if (newQuantity > variant.getStock()) {
+                throw new BusinessException("Quantidade solicitada indisponível em estoque");
+            }
+            existingItem.setQuantity(newQuantity);
             cartItemRepository.save(existingItem);
         } else {
             CartItem newItem = new CartItem();
