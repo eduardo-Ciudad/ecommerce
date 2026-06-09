@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
+import com.eduardo.ecomerce.infra.security.SecurityUtils;
 import com.eduardo.ecomerce.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,21 +19,22 @@ public class OrderController {
 
     private final OrderService orderService;
 
-    @PostMapping("/{userId}")
-    public ResponseEntity<OrderOutput> create(@PathVariable UUID userId) {
+    @PostMapping
+    public ResponseEntity<OrderOutput> create() {
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
         return ResponseEntity.status(HttpStatus.CREATED).body(orderService.create(userId));
     }
 
-    @GetMapping("/{userId}")
-    public ResponseEntity<List<OrderOutput>> findByUserId(@PathVariable UUID userId) {
+    @GetMapping
+    public ResponseEntity<List<OrderOutput>> findAll() {
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
         return ResponseEntity.ok(orderService.findByUserId(userId));
     }
 
-    @GetMapping("/{userId}/{orderId}")
-    public ResponseEntity<OrderOutput> findByUserIdAndOrderId(
-            @PathVariable UUID userId,
-            @PathVariable UUID orderId) {
-        return ResponseEntity.ok(orderService.findByUserIdAndOrderId(userId, orderId));
+    @GetMapping("/{id}")
+    public ResponseEntity<OrderOutput> findById(@PathVariable UUID id) {
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
+        return ResponseEntity.ok(orderService.findByUserIdAndOrderId(userId, id));
     }
 
     @PutMapping("/{id}/status")
