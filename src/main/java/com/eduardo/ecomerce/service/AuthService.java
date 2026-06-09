@@ -6,6 +6,7 @@ import com.eduardo.ecomerce.domain.user.UserRepository;
 import com.eduardo.ecomerce.domain.user.UserRole;
 import com.eduardo.ecomerce.dto.input.login.LoginInput;
 import com.eduardo.ecomerce.dto.input.register.RegisterInput;
+import com.eduardo.ecomerce.dto.input.token.RefreshTokenInput;
 import com.eduardo.ecomerce.dto.output.auth.AuthOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.security.JwtService;
@@ -55,5 +56,21 @@ public class AuthService {
         String refreshToken = jwtService.generateRefreshToken(user);
 
         return new AuthOutput(accessToken, refreshToken);
+    }
+
+    public AuthOutput refresh(RefreshTokenInput input) {
+        String email = jwtService.extractUsername(input.refreshToken());
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessException("Usuário não encontrado"));
+
+        if (!jwtService.isTokenValid(input.refreshToken(), user)) {
+            throw new BusinessException("Refresh token inválido ou expirado");
+        }
+
+        String newAccessToken = jwtService.generateToken(user);
+        String newRefreshToken = jwtService.generateRefreshToken(user);
+
+        return new AuthOutput(newAccessToken, newRefreshToken);
     }
 }

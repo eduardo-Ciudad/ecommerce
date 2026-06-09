@@ -3,6 +3,7 @@ package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.dto.input.login.LoginInput;
 import com.eduardo.ecomerce.dto.input.register.RegisterInput;
+import com.eduardo.ecomerce.dto.input.token.RefreshTokenInput;
 import com.eduardo.ecomerce.dto.output.auth.AuthOutput;
 import com.eduardo.ecomerce.service.AuthService;
 import jakarta.validation.Valid;
@@ -31,5 +32,10 @@ public class AuthController {
     public ResponseEntity<AuthOutput> login(@RequestBody @Valid LoginInput input) {
         AuthOutput output = authService.login(input);
         return ResponseEntity.ok(output);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthOutput> refresh(@RequestBody @Valid RefreshTokenInput input) {
+        return ResponseEntity.ok(authService.refresh(input));
     }
 }
