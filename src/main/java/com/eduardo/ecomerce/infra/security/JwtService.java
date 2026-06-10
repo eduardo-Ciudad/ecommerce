@@ -33,8 +33,14 @@ public class JwtService {
     }
 
     private String buildToken(UserDetails userDetails, long expirationTime) {
+        com.eduardo.ecomerce.domain.user.User user =
+                (com.eduardo.ecomerce.domain.user.User) userDetails;
+
         return Jwts.builder()
                 .subject(userDetails.getUsername())
+                .claim("role", user.getRole().name())
+                .claim("name", user.getName())
+                .claim("id", user.getId().toString())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expirationTime))
                 .signWith(getSigningKey())
