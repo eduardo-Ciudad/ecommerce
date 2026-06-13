@@ -29,7 +29,16 @@ public class JwtService {
     }
 
     public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(userDetails, refreshExpiration);
+        com.eduardo.ecomerce.domain.user.User user =
+                (com.eduardo.ecomerce.domain.user.User) userDetails;
+
+        return Jwts.builder()
+                .subject(userDetails.getUsername())
+                .claim("typ", "refresh")
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + refreshExpiration))
+                .signWith(getSigningKey())
+                .compact();
     }
 
     private String buildToken(UserDetails userDetails, long expirationTime) {
