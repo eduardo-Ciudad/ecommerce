@@ -7,6 +7,7 @@ import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
 import com.eduardo.ecomerce.dto.output.productvariant.ProductVariantOutput;
+import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,11 +66,16 @@ public class ProductService {
 
     @Transactional
     public void delete(UUID id) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado"));
-        product.setActive(false);
-        productRepository.save(product);
-        log.info("Produto desativado (soft delete) — id: {}", id);
+        if (!categoryRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Categoria não encontrada");
+        }
+
+        if (productRepository.existsByCategoryId(id)) {
+            throw new BusinessException("Categoria possui produtos vinculados e não pode ser removida");
+        }
+
+        categoryRepository.deleteById(id);
+        log.info("Categoria removida — id: {}", id);
     }
 
     private ProductOutput toOutput(Product product) {
