@@ -9,12 +9,14 @@ import com.eduardo.ecomerce.dto.output.product.ProductOutput;
 import com.eduardo.ecomerce.dto.output.productvariant.ProductVariantOutput;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ProductService {
@@ -31,6 +33,7 @@ public class ProductService {
         product.setName(input.name());
         product.setDescription(input.description());
         productRepository.save(product);
+        log.info("Produto criado — id: {}, nome: {}", product.getId(), product.getName());
         return toOutput(product);
     }
 
@@ -56,6 +59,7 @@ public class ProductService {
         product.setName(input.name());
         product.setDescription(input.description());
         productRepository.save(product);
+        log.info("Produto atualizado — id: {}", id);
         return toOutput(product);
     }
 
@@ -65,6 +69,7 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado"));
         product.setActive(false);
         productRepository.save(product);
+        log.info("Produto desativado (soft delete) — id: {}", id);
     }
 
     private ProductOutput toOutput(Product product) {

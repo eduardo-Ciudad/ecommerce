@@ -17,6 +17,7 @@ import com.eduardo.ecomerce.dto.output.orderitem.OrderItemOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -78,6 +80,7 @@ public class OrderService {
 
         order.setTotal(total);
         orderRepository.save(order);
+        log.info("Pedido criado — usuário: {}, orderId: {}", userId, order.getId());
 
         cartItemRepository.deleteByCartId(cart.getId());
 
@@ -105,6 +108,7 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado"));
         order.setStatus(status);
         orderRepository.save(order);
+        log.info("Status do pedido atualizado — orderId: {}, status: {}", id, status);
         return toOutput(order);
     }
 

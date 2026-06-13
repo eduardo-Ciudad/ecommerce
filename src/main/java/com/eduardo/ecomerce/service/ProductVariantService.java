@@ -8,11 +8,13 @@ import com.eduardo.ecomerce.dto.input.productvariant.ProductVariantInput;
 import com.eduardo.ecomerce.dto.output.productvariant.ProductVariantOutput;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ProductVariantService {
@@ -30,6 +32,7 @@ public class ProductVariantService {
         variant.setPrice(input.price());
         variant.setStock(input.stock());
         productVariantRepository.save(variant);
+        log.info("Variante criada — produtoId: {}, tamanho: {}", productId, input.size());
         return toOutput(variant);
     }
 
@@ -41,6 +44,7 @@ public class ProductVariantService {
         variant.setPrice(input.price());
         variant.setStock(input.stock());
         productVariantRepository.save(variant);
+        log.info("Variante atualizada — id: {}", id);
         return toOutput(variant);
     }
 
@@ -50,6 +54,7 @@ public class ProductVariantService {
             throw new ResourceNotFoundException("Variante não encontrada");
         }
         productVariantRepository.deleteById(id);
+        log.info("Variante removida — id: {}", id);
     }
 
     private ProductVariantOutput toOutput(ProductVariant variant) {

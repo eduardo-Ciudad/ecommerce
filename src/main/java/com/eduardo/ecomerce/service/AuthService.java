@@ -11,11 +11,13 @@ import com.eduardo.ecomerce.dto.output.auth.AuthOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -37,6 +39,7 @@ public class AuthService {
         user.setRole(UserRole.CLIENT);
 
         userRepository.save(user);
+        log.info("Novo usuário registrado: {}", input.email());
 
         String accessToken = jwtService.generateToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
@@ -54,6 +57,7 @@ public class AuthService {
 
         String accessToken = jwtService.generateToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
+        log.info("Login realizado: {}", input.email());
 
         return new AuthOutput(accessToken, refreshToken);
     }
@@ -77,6 +81,7 @@ public class AuthService {
 
         String newAccessToken = jwtService.generateToken(user);
         String newRefreshToken = jwtService.generateRefreshToken(user);
+        log.info("Refresh token utilizado: {}", email);
 
         return new AuthOutput(newAccessToken, newRefreshToken);
     }

@@ -7,11 +7,13 @@ import com.eduardo.ecomerce.dto.output.category.CategoryOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CategoryService {
@@ -27,6 +29,7 @@ public class CategoryService {
         category.setName(input.name());
 
         categoryRepository.save(category);
+        log.info("Categoria criada: {}", input.name());
         return toOutput(category);
     }
 
@@ -48,6 +51,7 @@ public class CategoryService {
             throw new ResourceNotFoundException("Categoria não encontrada");
         }
         categoryRepository.deleteById(id);
+        log.info("Categoria removida — id: {}", id);
     }
 
     private CategoryOutput toOutput(Category category) {

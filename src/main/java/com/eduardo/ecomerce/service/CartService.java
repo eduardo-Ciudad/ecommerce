@@ -15,6 +15,7 @@ import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import com.eduardo.ecomerce.infra.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CartService {
@@ -77,6 +79,7 @@ public class CartService {
             cartItemRepository.save(newItem);
         }
 
+        log.info("Item adicionado ao carrinho — usuário: {}, variant: {}, quantidade: {}", userId, input.variantId(), input.quantity());
         return toOutput(cart);
     }
 
@@ -98,6 +101,7 @@ public class CartService {
 
         item.setQuantity(quantity);
         cartItemRepository.save(item);
+        log.info("Item do carrinho atualizado — itemId: {}, nova quantidade: {}", itemId, quantity);
 
         return toOutput(item.getCart());
     }
@@ -111,6 +115,7 @@ public class CartService {
                 .orElseThrow(() -> new ResourceNotFoundException("Item do carrinho não encontrado"));
 
         cartItemRepository.delete(item);
+        log.info("Item removido do carrinho — itemId: {}", itemId);
     }
 
     private Cart createCart(UUID userId) {
