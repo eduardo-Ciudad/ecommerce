@@ -85,29 +85,32 @@ public class CartService {
 
         UUID userId = SecurityUtils.getAuthenticatedUserId();
 
-        CartItem item = cartItemRepository.findById(itemId)
+        CartItem item = cartItemRepository.findByIdAndCartUserId(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Item não encontrado"));
-
-        if (!item.getCart().getUser().getId().equals(userId)) {
-            throw new ResourceNotFoundException("Item não encontrado");
-        }
 
         if (quantity <= 0) {
             throw new BusinessException("Quantidade deve ser maior que zero");
         }
 
+        if (quantity > item.getVariant().getStock()) {
+            throw new BusinessException("Estoque insuficiente");
+        }
+
         item.setQuantity(quantity);
         cartItemRepository.save(item);
-        Cart cart = cartRepository.findById(item.getCart().getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Carrinho não encontrado"));
-        return toOutput(cart);
+
+        return toOutput(item.getCart());
     }
 
+
+    @Transactional
     public void removeItem(UUID itemId) {
-        if (!cartItemRepository.existsById(itemId)) {
-            throw new ResourceNotFoundException("Item do carrinho não encontrado");
-        }
-        cartItemRepository.deleteById(itemId);
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
+
+        CartItem item = cartItemRepository.findByIdAndCartUserId(itemId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Item do carrinho não encontrado"));
+
+        cartItemRepository.delete(item);
     }
 
     private Cart createCart(UUID userId) {
