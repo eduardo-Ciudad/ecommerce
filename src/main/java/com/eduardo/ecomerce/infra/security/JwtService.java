@@ -82,6 +82,10 @@ public class JwtService {
         return claimsResolver.apply(claims);
     }
 
+    public String extractTokenType(String token) {
+        return extractClaim(token, claims -> claims.get("typ", String.class));
+    }
+
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes());
     }

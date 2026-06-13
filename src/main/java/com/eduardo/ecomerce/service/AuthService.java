@@ -58,6 +58,8 @@ public class AuthService {
         return new AuthOutput(accessToken, refreshToken);
     }
 
+
+
     public AuthOutput refresh(RefreshTokenInput input) {
         String email = jwtService.extractUsername(input.refreshToken());
 
@@ -68,9 +70,15 @@ public class AuthService {
             throw new BusinessException("Refresh token inválido ou expirado");
         }
 
+        String typ = jwtService.extractTokenType(input.refreshToken());
+        if (!"refresh".equals(typ)) {
+            throw new BusinessException("Token inválido");
+        }
+
         String newAccessToken = jwtService.generateToken(user);
         String newRefreshToken = jwtService.generateRefreshToken(user);
 
         return new AuthOutput(newAccessToken, newRefreshToken);
     }
+
 }
