@@ -13,10 +13,12 @@ import com.eduardo.ecomerce.dto.output.cart.CartOutput;
 import com.eduardo.ecomerce.dto.output.cartitem.CartItemOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
+import com.eduardo.ecomerce.infra.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.rmi.server.UID;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -80,11 +82,20 @@ public class CartService {
 
     @Transactional
     public CartOutput updateItem(UUID itemId, Integer quantity) {
+
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
+
+        CartItem item = cartItemRepository.findById(itemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Item não encontrado"));
+
+        if (!item.getCart().getUser().getId().equals(userId)) {
+            throw new ResourceNotFoundException("Item não encontrado");
+        }
+
         if (quantity <= 0) {
             throw new BusinessException("Quantidade deve ser maior que zero");
         }
-        CartItem item = cartItemRepository.findById(itemId)
-                .orElseThrow(() -> new ResourceNotFoundException("Item do carrinho não encontrado"));
+
         item.setQuantity(quantity);
         cartItemRepository.save(item);
         Cart cart = cartRepository.findById(item.getCart().getId())
