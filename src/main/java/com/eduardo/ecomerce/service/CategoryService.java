@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.service;
 
 import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
+import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.dto.input.category.CategoryInput;
 import com.eduardo.ecomerce.dto.output.category.CategoryOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
@@ -18,6 +19,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CategoryService {
 
+    private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
 
     public CategoryOutput create(CategoryInput input) {
@@ -50,6 +52,11 @@ public class CategoryService {
         if (!categoryRepository.existsById(id)) {
             throw new ResourceNotFoundException("Categoria não encontrada");
         }
+
+        if (productRepository.existsByCategoryId(id)) {
+            throw new BusinessException("Categoria possui produtos vinculados e não pode ser removida");
+        }
+
         categoryRepository.deleteById(id);
         log.info("Categoria removida — id: {}", id);
     }
