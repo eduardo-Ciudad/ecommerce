@@ -106,6 +106,15 @@ public class OrderService {
     public OrderOutput updateStatus(UUID id, OrderStatus status) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado"));
+
+        OrderStatus current = order.getStatus();
+        if (current == status) {
+            throw new BusinessException("O pedido já esta com o status" + current + "para" + status);
+        }
+        if (!current.canTransition(status)) {
+            throw new BusinessException( "Transição inválida: não é possível mudar de " + current + " para " + status);
+        }
+
         order.setStatus(status);
         orderRepository.save(order);
         log.info("Status do pedido atualizado — orderId: {}, status: {}", id, status);
