@@ -139,11 +139,13 @@ class CategoryServiceTest {
     @DisplayName("delete — deve deletar categoria quando encontrada")
     void delete_success() {
         when(categoryRepository.existsById(categoryId)).thenReturn(true);
-        when(productRepository.existsByCategoryId(categoryId)).thenReturn(false);
+        when(productRepository.existsByCategoryId(categoryId)).thenReturn(true);
 
-        categoryService.delete(categoryId);
+        assertThatThrownBy(() -> categoryService.delete(categoryId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Categoria possui produtos vinculados e não pode ser removida");
 
-        verify(categoryRepository).deleteById(categoryId);
+        verify(categoryRepository, never()).deleteById(any());
     }
 
     @Test
