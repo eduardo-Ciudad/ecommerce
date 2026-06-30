@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.service;
 
 import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
+import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.dto.input.category.CategoryInput;
 import com.eduardo.ecomerce.dto.output.category.CategoryOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
@@ -26,6 +27,10 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class CategoryServiceTest {
+
+
+    @Mock
+    private ProductRepository productRepository;
 
     @Mock
     private CategoryRepository categoryRepository;
@@ -134,6 +139,7 @@ class CategoryServiceTest {
     @DisplayName("delete — deve deletar categoria quando encontrada")
     void delete_success() {
         when(categoryRepository.existsById(categoryId)).thenReturn(true);
+        when(productRepository.existsByCategoryId(categoryId)).thenReturn(false);
 
         categoryService.delete(categoryId);
 
