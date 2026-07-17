@@ -85,7 +85,6 @@ public class ProductController {
     @ApiResponse(responseCode = "404", description = "Produto não encontrado")
     @ApiResponse(responseCode = "400", description = "Arquivo inválido (tipo não permitido, vazio ou acima de 5MB)")
     @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PostMapping("/{id}/image")
     public ResponseEntity<Map<String, String>> uploadImage(
             @PathVariable UUID id,
             @RequestParam("file") MultipartFile file) {
