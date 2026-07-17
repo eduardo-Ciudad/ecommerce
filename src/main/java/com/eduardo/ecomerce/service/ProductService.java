@@ -8,10 +8,12 @@ import com.eduardo.ecomerce.dto.input.product.ProductInput;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
 import com.eduardo.ecomerce.dto.output.productvariant.ProductVariantOutput;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -23,6 +25,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final StorageService storageService;
 
     @Transactional
     public ProductOutput create(ProductInput input) {
@@ -70,6 +73,19 @@ public class ProductService {
         product.setActive(false);
         productRepository.save(product);
         log.info("Produto desativado (soft delete) — id: {}", id);
+    }
+
+    public String uploadImage(UUID productId, MultipartFile file) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new EntityNotFoundException("Produto não encontrado"));
+
+        String imageUrl = storageService.upload(file);
+        product.setImageUrl(imageUrl);
+        productRepository.save(product);
+
+        log.info("Imagem atualizada para o produto {}: {}", productId, imageUrl);
+
+        return imageUrl;
     }
 
     private ProductOutput toOutput(Product product) {

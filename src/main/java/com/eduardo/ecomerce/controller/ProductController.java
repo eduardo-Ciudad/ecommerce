@@ -12,8 +12,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -75,5 +77,15 @@ public class ProductController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         productService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/image")
+    public ResponseEntity<Map<String, String>> uploadImage(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+
+        String imageUrl = productService.uploadImage(id, file);
+
+        return ResponseEntity.ok(Map.of("imageUrl", imageUrl));
     }
 }
