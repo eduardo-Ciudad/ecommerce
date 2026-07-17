@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -79,6 +80,11 @@ public class ProductController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Upload de imagem do produto", description = "Faz upload de uma imagem (JPEG, PNG ou WebP, máx 5MB) e associa ao produto")
+    @ApiResponse(responseCode = "200", description = "Imagem enviada com sucesso")
+    @ApiResponse(responseCode = "404", description = "Produto não encontrado")
+    @ApiResponse(responseCode = "400", description = "Arquivo inválido (tipo não permitido, vazio ou acima de 5MB)")
+    @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PostMapping("/{id}/image")
     public ResponseEntity<Map<String, String>> uploadImage(
             @PathVariable UUID id,
