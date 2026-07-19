@@ -1,0 +1,3 @@
+ALTER TABLE orders ADD COLUMN payment_id VARCHAR(100);
+ALTER TABLE orders ADD COLUMN payment_status VARCHAR(50);
+ALTER TABLE orders ADD COLUMN checkout_url VARCHAR(500);
