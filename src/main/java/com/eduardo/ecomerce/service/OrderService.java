@@ -137,6 +137,8 @@ public class OrderService {
                 order.getUser().getId(),
                 order.getTotal(),
                 order.getStatus(),
+                order.getPaymentStatus(),
+                order.getCheckoutUrl(),
                 items,
                 order.getCreatedAt()
         );

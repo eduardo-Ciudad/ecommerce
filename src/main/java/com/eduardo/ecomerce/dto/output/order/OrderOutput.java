@@ -13,7 +13,8 @@ public record OrderOutput(
         UUID userId,
         BigDecimal total,
         OrderStatus status,
+        String paymentStatus,
+        String checkoutUrl,
         List<OrderItemOutput> items,
         LocalDateTime createdAt
-) {
-}
+) { }
