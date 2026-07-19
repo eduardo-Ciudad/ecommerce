@@ -92,12 +92,15 @@ public class ProductService {
         List<ProductVariantOutput> variants = product.getVariants().stream()
                 .map(v -> new ProductVariantOutput(v.getId(), v.getSize(), v.getPrice(), v.getStock(), v.getCreatedAt()))
                 .toList();
+
+
         return new ProductOutput(
                 product.getId(),
                 product.getCategory().getId(),
                 product.getCategory().getName(),
                 product.getName(),
                 product.getDescription(),
+                product.getImageUrl(),
                 product.getActive(),
                 variants,
                 product.getCreatedAt()

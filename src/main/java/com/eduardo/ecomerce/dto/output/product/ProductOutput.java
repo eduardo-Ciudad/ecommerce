@@ -12,8 +12,8 @@ public record ProductOutput(
         String categoryName,
         String name,
         String description,
+        String imageUrl,
         Boolean active,
         List<ProductVariantOutput> variants,
         LocalDateTime createdAt
-) {
-}
+) { }
