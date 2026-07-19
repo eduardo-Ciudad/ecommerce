@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.service;
 
 import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
+import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
 import com.mercadopago.client.preference.PreferenceBackUrlsRequest;
 import com.mercadopago.client.preference.PreferenceClient;
@@ -69,6 +70,38 @@ public class PaymentService {
         } catch (Exception e) {
             log.error("Erro ao criar checkout para pedido {}", orderId, e);
             throw new RuntimeException("Erro ao criar checkout no Mercado Pago", e);
+        }
+    }
+
+    public void processWebhook(String paymentId, UUID orderId) {
+        try {
+            com.mercadopago.client.payment.PaymentClient paymentClient =
+                    new com.mercadopago.client.payment.PaymentClient();
+
+            com.mercadopago.resources.payment.Payment payment =
+                    paymentClient.get(Long.parseLong(paymentId));
+
+            String status = payment.getStatus();
+
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new EntityNotFoundException("Pedido não encontrado"));
+
+            order.setPaymentId(paymentId);
+            order.setPaymentStatus(status);
+
+            switch (status) {
+                case "approved" -> order.setStatus(OrderStatus.PAID);
+                case "rejected" -> order.setStatus(OrderStatus.CANCELLED);
+                // "pending", "in_process" → mantém PENDING
+            }
+
+            orderRepository.save(order);
+            log.info("Webhook processado - Pedido: {}, Payment: {}, Status: {}",
+                    orderId, paymentId, status);
+
+        } catch (Exception e) {
+            log.error("Erro ao processar webhook do pedido {}", orderId, e);
+            throw new RuntimeException("Erro ao processar webhook", e);
         }
     }
 
