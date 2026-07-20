@@ -34,6 +34,10 @@ public class PaymentService {
     private String failureUrl;
 
     public String createCheckout(UUID orderId) {
+
+        log.info("MP URLs — success: [{}], failure: [{}], notification: [{}]",
+                successUrl, failureUrl, notificationUrl);
+
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new EntityNotFoundException("Pedido nao encontrado"));
 
@@ -51,7 +55,7 @@ public class PaymentService {
                 .items(items)
                 .backUrls(backUrls)
                 .notificationUrl(notificationUrl + "?orderId=" + orderId)
-                .autoReturn("approved")
+
                 .externalReference(orderId.toString())
                 .build();
 
