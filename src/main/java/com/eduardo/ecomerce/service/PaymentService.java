@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.UUID;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -67,6 +66,10 @@ public class PaymentService {
 
             return preference.getInitPoint();
 
+        } catch (com.mercadopago.exceptions.MPApiException e) {
+            log.error("MP API Error - Status: {}, Content: {}",
+                    e.getStatusCode(), e.getApiResponse().getContent());
+            throw new RuntimeException("Erro ao criar checkout no Mercado Pago", e);
         } catch (Exception e) {
             log.error("Erro ao criar checkout para pedido {}", orderId, e);
             throw new RuntimeException("Erro ao criar checkout no Mercado Pago", e);
@@ -92,7 +95,6 @@ public class PaymentService {
             switch (status) {
                 case "approved" -> order.setStatus(OrderStatus.PAID);
                 case "rejected" -> order.setStatus(OrderStatus.CANCELLED);
-                // "pending", "in_process" → mantém PENDING
             }
 
             orderRepository.save(order);
@@ -113,5 +115,4 @@ public class PaymentService {
                 .currencyId("BRL")
                 .build();
     }
-
 }
