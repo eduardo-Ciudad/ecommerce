@@ -13,9 +13,6 @@ public class MercadoPagoConfiguration {
 
     @PostConstruct
     public void init() {
-        System.out.println("==================================");
-        System.out.println(accessToken);
-        System.out.println("==================================");
         MercadoPagoConfig.setAccessToken(accessToken);
     }
 }
