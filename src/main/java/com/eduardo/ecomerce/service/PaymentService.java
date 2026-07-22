@@ -6,6 +6,7 @@ import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
 import com.eduardo.ecomerce.dto.input.payment.PaymentInput;
 import com.eduardo.ecomerce.dto.output.payment.PaymentOutput;
+import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.mercadopago.client.payment.PaymentClient;
 import com.mercadopago.client.payment.PaymentCreateRequest;
 import com.mercadopago.client.payment.PaymentPayerRequest;
@@ -21,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -100,15 +102,31 @@ public class PaymentService {
         }
     }
 
-    public void processWebhook(String paymentId, UUID orderId) {
+    public void processWebhook(String paymentId) {
         try {
             PaymentClient paymentClient = new PaymentClient();
             Payment payment = paymentClient.get(Long.parseLong(paymentId));
 
             String status = payment.getStatus();
+            UUID orderId = UUID.fromString(payment.getExternalReference());
 
             Order order = orderRepository.findById(orderId)
                     .orElseThrow(() -> new EntityNotFoundException("Pedido não encontrado"));
+
+            // Idempotência: se esse pagamento já foi processado com o mesmo status, não faz nada de novo
+            if (paymentId.equals(order.getPaymentId()) && status.equals(order.getPaymentStatus())) {
+                log.info("Webhook ignorado - Pedido: {}, Payment: {} já processado com status {}",
+                        orderId, paymentId, status);
+                return;
+            }
+
+            // Confere se o valor pago bate com o total do pedido antes de confirmar
+            BigDecimal paidAmount = payment.getTransactionAmount();
+            if ("approved".equals(status) && paidAmount.compareTo(order.getTotal()) != 0) {
+                log.error("Valor divergente no webhook - Pedido: {}, esperado: {}, pago: {}",
+                        orderId, order.getTotal(), paidAmount);
+                throw new BusinessException("Valor do pagamento não corresponde ao pedido");
+            }
 
             order.setPaymentId(paymentId);
             order.setPaymentStatus(status);
@@ -123,7 +141,7 @@ public class PaymentService {
                     orderId, paymentId, status);
 
         } catch (Exception e) {
-            log.error("Erro ao processar webhook do pedido {}", orderId, e);
+            log.error("Erro ao processar webhook do payment {}", paymentId, e);
             throw new RuntimeException("Erro ao processar webhook", e);
         }
     }
