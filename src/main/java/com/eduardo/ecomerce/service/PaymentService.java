@@ -32,6 +32,7 @@ import java.util.UUID;
 public class PaymentService {
 
     private final OrderRepository orderRepository;
+    private final PaymentClient paymentClient;
 
     @Value("${mercadopago.notification-url}")
     private String notificationUrl;
@@ -60,7 +61,6 @@ public class PaymentService {
         }
 
         try {
-            PaymentClient paymentClient = new PaymentClient();
             Payment payment = paymentClient.create(requestBuilder.build());
 
             order.setPaymentId(payment.getId().toString());
@@ -108,7 +108,6 @@ public class PaymentService {
 
     public void processWebhook(String paymentId) {
         try {
-            PaymentClient paymentClient = new PaymentClient();
             Payment payment = paymentClient.get(Long.parseLong(paymentId));
 
             String status = payment.getStatus();
