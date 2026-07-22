@@ -3,6 +3,7 @@ package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.dto.input.payment.PaymentInput;
 import com.eduardo.ecomerce.dto.output.payment.PaymentOutput;
+import com.eduardo.ecomerce.infra.payment.WebhookSignatureValidator;
 import com.eduardo.ecomerce.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -10,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -70,3 +72,4 @@ public class PaymentController {
 
         return ResponseEntity.ok().build();
     }
+}
