@@ -27,6 +27,7 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final WebhookSignatureValidator webhookSignatureValidator;
 
     @Operation(summary = "Processar pagamento",
             description = "Processa pagamento via cartão de crédito ou Pix")
@@ -46,7 +47,10 @@ public class PaymentController {
     @Operation(summary = "Webhook do Mercado Pago",
             description = "Recebe notificações de pagamento")
     @PostMapping("/webhook")
-    public ResponseEntity<Void> webhook(@RequestBody Map<String, Object> payload) {
+    public ResponseEntity<Void> webhook(
+            @RequestHeader(value = "x-signature", required = false) String xSignature,
+            @RequestHeader(value = "x-request-id", required = false) String xRequestId,
+            @RequestBody Map<String, Object> payload) {
 
         log.info("Webhook recebido - type: {}", payload.get("type"));
 
@@ -55,9 +59,14 @@ public class PaymentController {
         if ("payment".equals(type)) {
             Map<String, Object> data = (Map<String, Object>) payload.get("data");
             String paymentId = String.valueOf(data.get("id"));
+
+            if (!webhookSignatureValidator.isValid(xSignature, xRequestId, paymentId)) {
+                log.warn("Assinatura de webhook inválida - Payment: {}", paymentId);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
             paymentService.processWebhook(paymentId);
         }
 
         return ResponseEntity.ok().build();
     }
-}
