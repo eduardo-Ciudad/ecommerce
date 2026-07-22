@@ -33,6 +33,9 @@ public class PaymentService {
 
     private final OrderRepository orderRepository;
 
+    @Value("${mercadopago.notification-url}")
+    private String notificationUrl;
+
     public PaymentOutput processPayment(PaymentInput input, String payerEmail) {
         Order order = orderRepository.findById(input.orderId())
                 .orElseThrow(() -> new EntityNotFoundException("Pedido não encontrado"));
@@ -41,6 +44,7 @@ public class PaymentService {
                 .transactionAmount(order.getTotal())
                 .description("MiniModa - Pedido #" + order.getId().toString().substring(0, 8))
                 .externalReference(order.getId().toString())
+                .notificationUrl(notificationUrl)
                 .payer(PaymentPayerRequest.builder()
                         .email(payerEmail)
                         .build());
