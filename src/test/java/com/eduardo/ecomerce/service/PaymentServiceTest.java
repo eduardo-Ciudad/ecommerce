@@ -27,6 +27,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -176,11 +177,11 @@ class PaymentServiceTest {
 
     private Payment mockPayment(String id, String status, String statusDetail, UUID externalReference) {
         Payment payment = org.mockito.Mockito.mock(Payment.class);
-        when(payment.getId()).thenReturn(Long.parseLong(id));
-        when(payment.getStatus()).thenReturn(status);
-        when(payment.getStatusDetail()).thenReturn(statusDetail);
-        when(payment.getExternalReference()).thenReturn(externalReference.toString());
-        when(payment.getTransactionAmount()).thenReturn(new BigDecimal("150.00")); // bate com order.getTotal()
+        lenient().when(payment.getId()).thenReturn(Long.parseLong(id));
+        lenient().when(payment.getStatus()).thenReturn(status);
+        lenient().when(payment.getStatusDetail()).thenReturn(statusDetail);
+        lenient().when(payment.getExternalReference()).thenReturn(externalReference.toString());
+        lenient().when(payment.getTransactionAmount()).thenReturn(new BigDecimal("150.00"));
         return payment;
     }
 
