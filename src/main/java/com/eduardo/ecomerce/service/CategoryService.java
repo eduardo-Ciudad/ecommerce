@@ -1,5 +1,5 @@
 package com.eduardo.ecomerce.service;
-
+import org.springframework.web.multipart.MultipartFile;
 import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
@@ -21,6 +21,7 @@ public class CategoryService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final StorageService storageService;
 
     public CategoryOutput create(CategoryInput input) {
         if (categoryRepository.existsByName(input.name())) {
@@ -59,6 +60,19 @@ public class CategoryService {
 
         categoryRepository.deleteById(id);
         log.info("Categoria removida — id: {}", id);
+    }
+
+    public String uploadImage(UUID id, MultipartFile file) {
+        Category category = categoryRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Categoria não encontrada"));
+
+        String imageUrl = storageService.upload(file, "categories");
+        category.setImageUrl(imageUrl);
+        categoryRepository.save(category);
+
+        log.info("Imagem atualizada para a categoria {}: {}", id, imageUrl);
+
+        return imageUrl;
     }
 
     private CategoryOutput toOutput(Category category) {
