@@ -41,6 +41,19 @@ public class PaymentService {
         Order order = orderRepository.findById(input.orderId())
                 .orElseThrow(() -> new EntityNotFoundException("Pedido não encontrado"));
 
+        if (!order.getUser().getEmail().equals(payerEmail)) {
+            throw new BusinessException("Pedido não pertence ao usuário autenticado");
+        }
+
+        if (order.getPaymentId() != null) {
+            throw new BusinessException("Pedido já possui pagamento em processamento");
+        }
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new BusinessException("Pedido não está pendente de pagamento");
+        }
+
+
         PaymentCreateRequest.PaymentCreateRequestBuilder requestBuilder = PaymentCreateRequest.builder()
                 .transactionAmount(order.getTotal())
                 .description("MiniModa - Pedido #" + order.getId().toString().substring(0, 8))
