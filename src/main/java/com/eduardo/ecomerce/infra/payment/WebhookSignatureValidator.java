@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -31,10 +32,15 @@ public class WebhookSignatureValidator {
 
         String calculatedHash = hmacSha256(manifest, webhookSecret);
 
-        return calculatedHash.equals(receivedHash);
+        return MessageDigest.isEqual(
+                calculatedHash.getBytes(StandardCharsets.UTF_8),
+                receivedHash.getBytes(StandardCharsets.UTF_8)
+        );
 
 
-}private Map<String, String> parseSignatureHeader(String xSignature) {
+}
+
+private Map<String, String> parseSignatureHeader(String xSignature) {
         Map<String, String> parts = new HashMap<>();
         for (String pair : xSignature.split(",")) {
             String[] keyValue = pair.split("=", 2);
