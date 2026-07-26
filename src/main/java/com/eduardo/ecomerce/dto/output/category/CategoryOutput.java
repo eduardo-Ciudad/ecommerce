@@ -6,6 +6,7 @@ import java.util.UUID;
 public record CategoryOutput(
         UUID id,
         String name,
+        String imageUrl,
         LocalDateTime createdAt
 ) {
 }
