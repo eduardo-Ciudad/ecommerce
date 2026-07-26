@@ -65,6 +65,7 @@ public class CategoryService {
         return new CategoryOutput(
                 category.getId(),
                 category.getName(),
+                category.getImageUrl(),
                 category.getCreatedAt()
         );
     }
