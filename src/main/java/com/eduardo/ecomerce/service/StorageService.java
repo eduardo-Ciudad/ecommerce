@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
@@ -71,6 +72,40 @@ public class StorageService {
             throw new IllegalArgumentException(
                     "Tipo de arquivo não permitido. Use: JPEG, PNG ou WebP"
             );
+        }
+
+        try {
+            byte[] header = new byte[12];
+            file.getInputStream().read(header);
+
+            if (!isValidImageMagicBytes(header)) {
+                throw new IllegalArgumentException("Conteúdo do arquivo não corresponde a uma imagem válida");
+            }
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Erro ao validar arquivo");
+        }
+    }
+
+    private boolean isValidImageMagicBytes(byte[] header) {
+        // JPEG: FF D8 FF
+        if (header[0] == (byte) 0xFF && header[1] == (byte) 0xD8 && header[2] == (byte) 0xFF) return true;
+        // PNG: 89 50 4E 47
+        if (header[0] == (byte) 0x89 && header[1] == (byte) 0x50 && header[2] == (byte) 0x4E && header[3] == (byte) 0x47) return true;
+        // WebP: RIFF....WEBP
+        if (header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
+                && header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P') return true;
+        return false;
+    }
+
+    public void delete(String fileUrl) {
+        try {
+            String key = fileUrl.replace(publicUrl + "/", "");
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .build());
+        } catch (Exception e) {
+            // Log mas não falha — a imagem órfã não é crítica
         }
     }
 
