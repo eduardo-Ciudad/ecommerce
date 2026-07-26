@@ -32,7 +32,7 @@ public class StorageService {
         this.s3Client = s3Client;
     }
 
-    public String upload(MultipartFile file) {
+    public String upload(MultipartFile file, String folder) {
         validate(file);
 
         String originalFilename = file.getOriginalFilename();
@@ -40,7 +40,7 @@ public class StorageService {
                 ? originalFilename.substring(originalFilename.lastIndexOf("."))
                 : ".jpg";
 
-        String key = "products/" + UUID.randomUUID() + extension;
+        String key = folder + "/" + UUID.randomUUID() + extension;
 
         try {
             PutObjectRequest request = PutObjectRequest.builder()

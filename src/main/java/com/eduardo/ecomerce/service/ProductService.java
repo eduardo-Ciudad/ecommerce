@@ -79,7 +79,7 @@ public class ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new EntityNotFoundException("Produto não encontrado"));
 
-        String imageUrl = storageService.upload(file);
+        String imageUrl = storageService.upload(file, "products");
         product.setImageUrl(imageUrl);
         productRepository.save(product);
 
