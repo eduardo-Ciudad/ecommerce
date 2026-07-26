@@ -158,7 +158,7 @@ public class PaymentService {
 
         } catch (Exception e) {
             log.error("Erro ao processar webhook do payment {}", paymentId, e);
-            throw new RuntimeException("Erro ao processar webhook", e);
+            throw new BusinessException("Erro ao processar notificação de pagamento");
         }
     }
 }
