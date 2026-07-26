@@ -112,10 +112,10 @@ public class PaymentService {
         } catch (com.mercadopago.exceptions.MPApiException e) {
             log.error("MP API Error - Status: {}, Content: {}",
                     e.getStatusCode(), e.getApiResponse().getContent());
-            throw new RuntimeException("Erro ao processar pagamento", e);
+            throw new BusinessException("Erro ao processar pagamento. Tente novamente.");
         } catch (Exception e) {
             log.error("Erro ao processar pagamento do pedido {}", input.orderId(), e);
-            throw new RuntimeException("Erro ao processar pagamento", e);
+            throw new BusinessException("Erro ao processar pagamento. Tente novamente.");
         }
     }
 
