@@ -12,13 +12,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.io.IOException;
 import java.time.Duration;
-
-
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
+
+    private static final Map<String, Integer> RATE_LIMITS = Map.of(
+            "/auth", 10,
+            "/payments", 5,
+            "/orders", 10,
+            "/cart", 30
+    );
 
     private final Cache<String, Bucket> buckets = Caffeine.newBuilder()
             .expireAfterAccess(1, TimeUnit.MINUTES)
@@ -34,13 +41,21 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        if (!path.startsWith("/auth")) {
+        var matchedLimit = RATE_LIMITS.entrySet().stream()
+                .filter(e -> path.startsWith(e.getKey()))
+                .findFirst()
+                .orElse(null);
+
+        if (matchedLimit == null) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String clientIp = request.getRemoteAddr();
-        Bucket bucket = buckets.get(clientIp, this::newBucket);
+        String clientIp = getClientIp(request);
+        String bucketKey = clientIp + ":" + matchedLimit.getKey();
+        int capacity = matchedLimit.getValue();
+
+        Bucket bucket = buckets.get(bucketKey, k -> newBucket(capacity));
 
         if (bucket.tryConsume(1)) {
             filterChain.doFilter(request, response);
@@ -51,10 +66,22 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
     }
 
-    private Bucket newBucket(String ip) {
+    private String getClientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            return xff.split(",")[0].trim();
+        }
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    private Bucket newBucket(int capacity) {
         Bandwidth limit = Bandwidth.builder()
-                .capacity(10)
-                .refillGreedy(10, Duration.ofMinutes(1))
+                .capacity(capacity)
+                .refillGreedy(capacity, Duration.ofMinutes(1))
                 .build();
         return Bucket.builder()
                 .addLimit(limit)
