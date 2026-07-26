@@ -1,5 +1,10 @@
 package com.eduardo.ecomerce.controller;
 
+
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
+import java.util.Map;
 import com.eduardo.ecomerce.dto.input.category.CategoryInput;
 import com.eduardo.ecomerce.dto.output.category.CategoryOutput;
 import com.eduardo.ecomerce.service.CategoryService;
@@ -53,6 +58,22 @@ public class CategoryController {
     })
     public ResponseEntity<CategoryOutput> findById(@PathVariable UUID id) {
         return ResponseEntity.ok(categoryService.findById(id));
+    }
+
+    @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload de imagem da categoria", description = "Faz upload de uma imagem (JPEG, PNG ou WebP, máx 5MB) e associa à categoria. Requer perfil ADMIN.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Imagem enviada com sucesso"),
+            @ApiResponse(responseCode = "404", description = "Categoria não encontrada"),
+            @ApiResponse(responseCode = "400", description = "Arquivo inválido")
+    })
+    public ResponseEntity<Map<String, String>> uploadImage(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+
+        String imageUrl = categoryService.uploadImage(id, file);
+
+        return ResponseEntity.ok(Map.of("imageUrl", imageUrl));
     }
 
     @DeleteMapping("/{id}")
