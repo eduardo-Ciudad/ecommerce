@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,13 +34,15 @@ class ProductServiceTest {
     private ProductRepository productRepository;
 
     @Mock
-    private StorageService  storageService;
+    private StorageService storageService;
 
     @Mock
     private CategoryRepository categoryRepository;
 
     @InjectMocks
     private ProductService productService;
+
+    private static final byte[] JPEG_BYTES = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0};
 
     @Test
     void shouldCreateProductSuccessfully() {
@@ -102,11 +105,11 @@ class ProductServiceTest {
         product.setName("Camiseta Infantil");
 
         var file = new MockMultipartFile(
-                "file", "camiseta.jpg", "image/jpeg", new byte[]{1, 2, 3}
+                "file", "camiseta.jpg", "image/jpeg", JPEG_BYTES
         );
 
         when(productRepository.findById(productId)).thenReturn(Optional.of(product));
-        when(storageService.upload(file)).thenReturn("https://pub-test.r2.dev/products/abc.jpg");
+        when(storageService.upload(file, "products")).thenReturn("https://pub-test.r2.dev/products/abc.jpg");
         when(productRepository.save(any(Product.class))).thenReturn(product);
 
         String imageUrl = productService.uploadImage(productId, file);
@@ -121,7 +124,7 @@ class ProductServiceTest {
     void uploadImageProductNotFound() {
         UUID productId = UUID.randomUUID();
         var file = new MockMultipartFile(
-                "file", "foto.jpg", "image/jpeg", new byte[]{1, 2, 3}
+                "file", "foto.jpg", "image/jpeg", JPEG_BYTES
         );
 
         when(productRepository.findById(productId)).thenReturn(Optional.empty());
@@ -129,7 +132,7 @@ class ProductServiceTest {
         assertThatThrownBy(() -> productService.uploadImage(productId, file))
                 .isInstanceOf(EntityNotFoundException.class);
 
-        verify(storageService, never()).upload(any());
+        verify(storageService, never()).upload(any(), anyString());
         verify(productRepository, never()).save(any());
     }
 }

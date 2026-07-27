@@ -3,6 +3,7 @@ package com.eduardo.ecomerce.service;
 import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
+import com.eduardo.ecomerce.domain.user.User;
 
 import com.eduardo.ecomerce.dto.input.payment.PaymentInput;
 import com.eduardo.ecomerce.dto.output.payment.PaymentOutput;
@@ -13,6 +14,7 @@ import com.mercadopago.resources.payment.Payment;
 import com.mercadopago.resources.payment.*;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -27,8 +29,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceTest {
@@ -44,16 +45,22 @@ class PaymentServiceTest {
 
     private UUID orderId;
     private Order order;
+    private User user;
 
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(paymentService, "notificationUrl", "http://teste.com/payments/webhook");
 
         orderId = UUID.randomUUID();
+
+        user = new User();
+        user.setEmail("cliente@teste.com");
+
         order = new Order();
         order.setId(orderId);
         order.setTotal(new BigDecimal("150.00"));
         order.setStatus(OrderStatus.PENDING);
+        order.setUser(user);
     }
 
     // ---------- processPayment ----------
@@ -116,6 +123,50 @@ class PaymentServiceTest {
                 .isInstanceOf(EntityNotFoundException.class);
     }
 
+    @Test
+    @DisplayName("Deve rejeitar pagamento se o pedido não pertence ao usuário autenticado")
+    void processPayment_pedidoNaoPertenceAoUsuario_lancaBusinessException() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
+
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> paymentService.processPayment(input, "outro@teste.com"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Pedido não pertence ao usuário autenticado");
+
+        verify(paymentClient, never()).create(any());
+    }
+
+    @Test
+    @DisplayName("Deve rejeitar pagamento se o pedido já possui pagamento em processamento")
+    void processPayment_pedidoJaPossuiPagamento_lancaBusinessException() throws Exception {
+        order.setPaymentId("existing-payment-id");
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
+
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> paymentService.processPayment(input, "cliente@teste.com"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Pedido já possui pagamento em processamento");
+
+        verify(paymentClient, never()).create(any());
+    }
+
+    @Test
+    @DisplayName("Deve rejeitar pagamento se o pedido não está pendente")
+    void processPayment_pedidoNaoPendente_lancaBusinessException() throws Exception {
+        order.setStatus(OrderStatus.PAID);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
+
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> paymentService.processPayment(input, "cliente@teste.com"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Pedido não está pendente de pagamento");
+
+        verify(paymentClient, never()).create(any());
+    }
+
     // ---------- processWebhook ----------
 
     @Test
@@ -132,21 +183,22 @@ class PaymentServiceTest {
     }
 
     @Test
+    @DisplayName("Webhook com valor divergente deve lançar exceção")
     void processWebhook_valorDivergente_lancaBusinessException() throws Exception {
         Payment mpPayment = mockPayment("222", "approved", "accredited", orderId);
-        when(mpPayment.getTransactionAmount()).thenReturn(new BigDecimal("999.99")); // difere de order.getTotal()
+        when(mpPayment.getTransactionAmount()).thenReturn(new BigDecimal("999.99"));
 
         when(paymentClient.get(222L)).thenReturn(mpPayment);
         when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.processWebhook("222"))
-                .hasCauseInstanceOf(BusinessException.class);
+                .isInstanceOf(BusinessException.class);
 
-        // pedido não deve ter sido alterado
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
     }
 
     @Test
+    @DisplayName("Webhook idempotente: mesmo paymentId + status já processado deve ser ignorado")
     void processWebhook_pagamentoJaProcessadoComMesmoStatus_ignoraReprocessamento() throws Exception {
         order.setPaymentId("333");
         order.setPaymentStatus("approved");
@@ -160,6 +212,7 @@ class PaymentServiceTest {
         paymentService.processWebhook("333");
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(orderRepository, never()).save(any());
     }
 
     @Test
@@ -170,7 +223,7 @@ class PaymentServiceTest {
         when(orderRepository.findById(orderId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentService.processWebhook("444"))
-                .isInstanceOf(RuntimeException.class);
+                .isInstanceOf(BusinessException.class);
     }
 
     // ---------- helpers ----------
