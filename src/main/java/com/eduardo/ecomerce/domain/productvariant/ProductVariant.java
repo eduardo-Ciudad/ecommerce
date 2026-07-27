@@ -37,6 +37,9 @@ public class ProductVariant {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Version
+    private Long version;
+
     @PrePersist
     private void prePersist() {
         this.createdAt = LocalDateTime.now();
