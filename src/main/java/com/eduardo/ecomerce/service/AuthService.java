@@ -44,13 +44,16 @@ public class AuthService {
     private long tokenExpirationHours;
 
     public AuthOutput register(RegisterInput input) {
-        if (userRepository.existsByEmail(input.email())) {
+
+        String normalizedEmail = input.email().trim().toLowerCase();
+
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException("Email já cadastrado");
         }
 
         User user = new User();
         user.setName(input.name());
-        user.setEmail(input.email());
+        user.setEmail(normalizedEmail);
         user.setPassword(passwordEncoder.encode(input.password()));
         user.setRole(UserRole.CLIENT);
 
