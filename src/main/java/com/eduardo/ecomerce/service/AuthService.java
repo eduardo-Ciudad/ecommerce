@@ -113,7 +113,8 @@ public class AuthService {
     }
 
     public void requestPasswordChange(ChangePasswordInput input, String email) {
-        User user = userRepository.findByEmail(email)
+        String normalizedEmail = email.trim().toLowerCase();
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new BusinessException("Usuário não encontrado"));
 
         if (!passwordEncoder.matches(input.currentPassword(), user.getPassword())) {
@@ -152,7 +153,8 @@ public class AuthService {
     }
 
     public void forgotPassword(ForgetPasswordInput input) {
-        userRepository.findByEmail(input.email()).ifPresent(user -> {
+        String normalizedEmail = input.email().trim().toLowerCase();
+        userRepository.findByEmail(normalizedEmail).ifPresent(user -> {
             String token = UUID.randomUUID().toString().replace("-", "");
 
             PasswordToken passwordToken = new PasswordToken(
