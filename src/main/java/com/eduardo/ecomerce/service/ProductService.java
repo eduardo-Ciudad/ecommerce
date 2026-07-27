@@ -79,12 +79,16 @@ public class ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new EntityNotFoundException("Produto não encontrado"));
 
+        String oldImageUrl = product.getImageUrl();
         String imageUrl = storageService.upload(file, "products");
         product.setImageUrl(imageUrl);
         productRepository.save(product);
 
-        log.info("Imagem atualizada para o produto {}: {}", productId, imageUrl);
+        if (oldImageUrl != null) {
+            storageService.delete(oldImageUrl);
+        }
 
+        log.info("Imagem atualizada para o produto {}: {}", productId, imageUrl);
         return imageUrl;
     }
 

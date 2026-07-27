@@ -66,12 +66,16 @@ public class CategoryService {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Categoria não encontrada"));
 
+        String oldImageUrl = category.getImageUrl();
         String imageUrl = storageService.upload(file, "categories");
         category.setImageUrl(imageUrl);
         categoryRepository.save(category);
 
-        log.info("Imagem atualizada para a categoria {}: {}", id, imageUrl);
+        if (oldImageUrl != null) {
+            storageService.delete(oldImageUrl);
+        }
 
+        log.info("Imagem atualizada para a categoria {}: {}", id, imageUrl);
         return imageUrl;
     }
 

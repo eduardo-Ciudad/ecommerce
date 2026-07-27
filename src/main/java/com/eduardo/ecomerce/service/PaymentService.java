@@ -38,7 +38,7 @@ public class PaymentService {
     private String notificationUrl;
 
     public PaymentOutput processPayment(PaymentInput input, String payerEmail) {
-        Order order = orderRepository.findById(input.orderId())
+        Order order = orderRepository.findByIdForUpdate(input.orderId())
                 .orElseThrow(() -> new EntityNotFoundException("Pedido não encontrado"));
 
         if (!order.getUser().getEmail().equals(payerEmail)) {
