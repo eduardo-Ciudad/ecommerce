@@ -67,11 +67,18 @@ public class AuthService {
     }
 
     public AuthOutput login(LoginInput input) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(input.email(), input.password())
-        );
+        String normalizedEmail = input.email().trim().toLowerCase();
 
-        User user = userRepository.findByEmail(input.email())
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(normalizedEmail, input.password())
+            );
+        }catch (Exception e) {
+            throw new BusinessException("Credenciais inválidas");
+        }
+
+
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new BusinessException("Usuário não encontrado"));
 
         String accessToken = jwtService.generateToken(user);
