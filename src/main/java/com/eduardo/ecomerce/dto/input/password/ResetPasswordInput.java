@@ -8,7 +8,6 @@ public record ResetPasswordInput(
         String token,
 
         @NotBlank(message = "Nova senha é obrigatória")
-        @Size(min = 6, message = "Nova senha deve ter no mínimo 6 caracteres")
-        String newPassword
+        @Size(min = 6, max = 72, message = "Nova senha deve ter entre 6 e 72 caracteres")        String newPassword
 ) {
 }
