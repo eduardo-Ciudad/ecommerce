@@ -56,7 +56,11 @@ public class OrderService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado"));
 
-        Order order = new Order();
+        if (!Boolean.TRUE.equals(user.getEmailVerified())) {
+            throw new BusinessException("Verifique seu email antes de finalizar a compra");
+        }
+
+            Order order = new Order();
         order.setUser(user);
         order.setStatus(OrderStatus.PENDING);
 

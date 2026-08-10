@@ -31,12 +31,12 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    @Operation(summary = "Registrar novo usuário", description = "Cria uma nova conta de usuário e retorna um par de access e refresh token")
+    @Operation(summary = "Registrar novo usuário", description = "Cria uma nova conta e envia email de verificação")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "Usuário registrado com sucesso")
+            @ApiResponse(responseCode = "201", description = "Cadastro realizado, email de verificação enviado")
     })
-    public ResponseEntity<AuthOutput> register(@RequestBody @Valid RegisterInput input) {
-        AuthOutput output = authService.register(input);
+    public ResponseEntity<MessageOutput> register(@RequestBody @Valid RegisterInput input) {
+        MessageOutput output = authService.register(input);
         return ResponseEntity.status(HttpStatus.CREATED).body(output);
     }
 
@@ -99,5 +99,16 @@ public class AuthController {
     public ResponseEntity<MessageOutput> resetPassword(@RequestBody @Valid ResetPasswordInput input) {
         authService.resetPassword(input);
         return ResponseEntity.ok(new MessageOutput("Senha redefinida com sucesso! Você já pode fazer login."));
+    }
+
+    @GetMapping("/verify-email")
+    @Operation(summary = "Verificar email", description = "Ativa a conta do usuário a partir do token enviado por email")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Email verificado com sucesso"),
+            @ApiResponse(responseCode = "422", description = "Token inválido ou expirado")
+    })
+    public ResponseEntity<AuthOutput> verifyEmail(@RequestParam String token) {
+        AuthOutput output = authService.verifyEmail(token);
+        return ResponseEntity.ok(output);
     }
 }
