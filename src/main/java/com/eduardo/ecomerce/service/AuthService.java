@@ -14,6 +14,7 @@ import com.eduardo.ecomerce.dto.input.password.ResetPasswordInput;
 import com.eduardo.ecomerce.dto.input.register.RegisterInput;
 import com.eduardo.ecomerce.dto.input.token.RefreshTokenInput;
 import com.eduardo.ecomerce.dto.output.auth.AuthOutput;
+import com.eduardo.ecomerce.dto.output.message.MessageOutput;
 import com.eduardo.ecomerce.email.EmailService;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.security.JwtService;
@@ -43,7 +44,7 @@ public class AuthService {
     @Value("${app.password-token.expiration-hours:1}")
     private long tokenExpirationHours;
 
-    public AuthOutput register(RegisterInput input) {
+    public MessageOutput register(RegisterInput input) {
 
         String normalizedEmail = input.email().trim().toLowerCase();
 
@@ -58,7 +59,33 @@ public class AuthService {
         user.setRole(UserRole.CLIENT);
 
         userRepository.save(user);
-        log.info("Novo usuário registrado: {}", input.email());
+        log.info("Novo usuário registrado: {}", normalizedEmail);
+
+        String token = UUID.randomUUID().toString().replace("-", "");
+
+        PasswordToken verificationToken = new PasswordToken(
+                user,
+                token,
+                PasswordTokenType.EMAIL_VERIFICATION,
+                LocalDateTime.now().plusHours(tokenExpirationHours)
+        );
+        passwordTokenRepository.save(verificationToken);
+
+        emailService.sendVerificationEmail(user.getEmail(), token);
+
+        return new MessageOutput("Cadastro realizado! Verifique seu email para ativar sua conta.");
+    }
+
+    public AuthOutput verifyEmail(String token) {
+        PasswordToken verificationToken = findValidToken(token, PasswordTokenType.EMAIL_VERIFICATION);
+
+        User user = verificationToken.getUser();
+        user.setEmailVerified(true);
+        userRepository.save(user);
+
+        verificationToken.setUsed(true);
+        passwordTokenRepository.save(verificationToken);
+        log.info("Email verificado para usuário {}", user.getEmail());
 
         String accessToken = jwtService.generateToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
