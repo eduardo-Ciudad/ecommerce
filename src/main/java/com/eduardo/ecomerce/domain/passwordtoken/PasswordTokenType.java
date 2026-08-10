@@ -3,5 +3,6 @@ package com.eduardo.ecomerce.domain.passwordtoken;
 
 public enum PasswordTokenType {
     CHANGE,
-    RESET
+    RESET,
+    EMAIL_VERIFICATION
 }
