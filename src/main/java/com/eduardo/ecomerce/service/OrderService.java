@@ -1,5 +1,7 @@
 package com.eduardo.ecomerce.service;
 
+import com.eduardo.ecomerce.domain.address.Address;
+import com.eduardo.ecomerce.domain.address.AddressRepository;
 import com.eduardo.ecomerce.domain.cart.Cart;
 import com.eduardo.ecomerce.domain.cart.CartRepository;
 import com.eduardo.ecomerce.domain.cartitem.CartItem;
@@ -12,8 +14,10 @@ import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.domain.user.User;
 import com.eduardo.ecomerce.domain.user.UserRepository;
+import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
 import com.eduardo.ecomerce.dto.output.orderitem.OrderItemOutput;
+import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -35,9 +39,11 @@ public class OrderService {
     private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
     private final ProductVariantRepository productVariantRepository;
+    private final AddressRepository addressRepository;
+    private final ShippingService shippingService;
 
     @Transactional
-    public OrderOutput create(UUID userId) {
+    public OrderOutput create(UUID userId, CreateOrderInput input) {
         Cart cart = cartRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Carrinho não encontrado"));
 
@@ -60,9 +66,27 @@ public class OrderService {
             throw new BusinessException("Verifique seu email antes de finalizar a compra");
         }
 
-            Order order = new Order();
+        Address address = addressRepository.findByIdAndUserId(input.addressId(), userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Endereço não encontrado"));
+
+        ShippingOutput shipping = shippingService.calculateByMethod(address.getCep(), input.shippingMethod());
+
+        Order order = new Order();
         order.setUser(user);
         order.setStatus(OrderStatus.PENDING);
+
+        order.setShippingMethod(shipping.method());
+        order.setShippingPrice(shipping.price());
+        order.setShippingDeadlineDays(shipping.deadlineDays());
+
+        order.setRecipientName(user.getName());
+        order.setRecipientCep(address.getCep());
+        order.setRecipientStreet(address.getStreet());
+        order.setRecipientNumber(address.getNumber());
+        order.setRecipientComplement(address.getComplement());
+        order.setRecipientNeighborhood(address.getNeighborhood());
+        order.setRecipientCity(address.getCity());
+        order.setRecipientState(address.getState());
 
         BigDecimal total = BigDecimal.ZERO;
 
@@ -81,6 +105,8 @@ public class OrderService {
             variant.setStock(variant.getStock() - cartItem.getQuantity());
             productVariantRepository.save(variant);
         }
+
+        total = total.add(shipping.price());
 
         order.setTotal(total);
         orderRepository.save(order);
@@ -143,6 +169,17 @@ public class OrderService {
                 order.getStatus(),
                 order.getPaymentStatus(),
                 order.getCheckoutUrl(),
+                order.getShippingMethod(),
+                order.getShippingPrice(),
+                order.getShippingDeadlineDays(),
+                order.getRecipientName(),
+                order.getRecipientCep(),
+                order.getRecipientStreet(),
+                order.getRecipientNumber(),
+                order.getRecipientComplement(),
+                order.getRecipientNeighborhood(),
+                order.getRecipientCity(),
+                order.getRecipientState(),
                 items,
                 order.getCreatedAt()
         );
