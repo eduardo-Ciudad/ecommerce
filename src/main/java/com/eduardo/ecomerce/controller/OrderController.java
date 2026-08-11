@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.domain.order.OrderStatus;
+import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
 import com.eduardo.ecomerce.infra.security.SecurityUtils;
 import com.eduardo.ecomerce.service.OrderService;
@@ -8,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,9 +33,9 @@ public class OrderController {
             @ApiResponse(responseCode = "401", description = "Usuário não autenticado"),
             @ApiResponse(responseCode = "422", description = "Erro de regra de negócio, ex: carrinho vazio ou estoque insuficiente")
     })
-    public ResponseEntity<OrderOutput> create() {
+    public ResponseEntity<OrderOutput> create(@RequestBody @Valid CreateOrderInput input) {
         UUID userId = SecurityUtils.getAuthenticatedUserId();
-        return ResponseEntity.status(HttpStatus.CREATED).body(orderService.create(userId));
+        return ResponseEntity.status(HttpStatus.CREATED).body(orderService.create(userId, input));
     }
 
     @GetMapping
