@@ -15,6 +15,17 @@ public record OrderOutput(
         OrderStatus status,
         String paymentStatus,
         String checkoutUrl,
+        String shippingMethod,
+        BigDecimal shippingPrice,
+        Integer shippingDeadlineDays,
+        String recipientName,
+        String recipientCep,
+        String recipientStreet,
+        String recipientNumber,
+        String recipientComplement,
+        String recipientNeighborhood,
+        String recipientCity,
+        String recipientState,
         List<OrderItemOutput> items,
         LocalDateTime createdAt
 ) { }
