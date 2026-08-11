@@ -44,11 +44,45 @@ public class Order {
     @Column(name = "checkout_url", length = 500)
     private String checkoutUrl;
 
+    @Column(name = "shipping_method", length = 20)
+    private String shippingMethod;
+
+    @Column(name = "shipping_price", precision = 10, scale = 2)
+    private BigDecimal shippingPrice;
+
+    @Column(name = "shipping_deadline_days")
+    private Integer shippingDeadlineDays;
+
+    @Column(name = "recipient_name", length = 100)
+    private String recipientName;
+
+    @Column(name = "recipient_cep", length = 9)
+    private String recipientCep;
+
+    @Column(name = "recipient_street", length = 200)
+    private String recipientStreet;
+
+    @Column(name = "recipient_number", length = 20)
+    private String recipientNumber;
+
+    @Column(name = "recipient_complement", length = 100)
+    private String recipientComplement;
+
+    @Column(name = "recipient_neighborhood", length = 100)
+    private String recipientNeighborhood;
+
+    @Column(name = "recipient_city", length = 100)
+    private String recipientCity;
+
+    @Column(name = "recipient_state", length = 2)
+    private String recipientState;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
     private List<OrderItem> items = new ArrayList<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
 
     @PrePersist
     private void prePersist() {
