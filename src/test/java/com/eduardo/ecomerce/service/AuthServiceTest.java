@@ -28,6 +28,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+
+import com.eduardo.ecomerce.domain.passwordtoken.PasswordTokenRepository;
+
+import com.eduardo.ecomerce.dto.output.message.MessageOutput;
+import com.eduardo.ecomerce.email.EmailService;
+
+import static org.mockito.ArgumentMatchers.eq;
+
+
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
@@ -42,6 +51,12 @@ class AuthServiceTest {
 
     @Mock
     private AuthenticationManager authenticationManager;
+
+    @Mock
+    private EmailService emailService;
+
+    @Mock
+    private PasswordTokenRepository passwordTokenRepository;
 
     @InjectMocks
     private AuthService authService;
@@ -62,21 +77,35 @@ class AuthServiceTest {
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("register — deve registrar usuário e retornar tokens")
+    @DisplayName("register — deve registrar usuário, gerar token de verificação e enviar email")
     void register_success() {
         RegisterInput input = new RegisterInput("Eduardo", "eduardo@email.com", "123456");
 
         when(userRepository.existsByEmail(input.email())).thenReturn(false);
         when(passwordEncoder.encode(input.password())).thenReturn("hashedPassword");
         when(userRepository.save(any(User.class))).thenReturn(user);
-        when(jwtService.generateToken(any(User.class))).thenReturn("access-token");
-        when(jwtService.generateRefreshToken(any(User.class))).thenReturn("refresh-token");
 
-        AuthOutput output = authService.register(input);
+        MessageOutput output = authService.register(input);
 
-        assertThat(output.accessToken()).isEqualTo("access-token");
-        assertThat(output.refreshToken()).isEqualTo("refresh-token");
+        assertThat(output.message()).isEqualTo("Cadastro realizado! Verifique seu email para ativar sua conta.");
         verify(userRepository).save(any(User.class));
+        verify(passwordTokenRepository).save(any());
+        verify(emailService).sendVerificationEmail(eq("eduardo@email.com"), any());
+        verifyNoInteractions(jwtService);
+    }
+
+    @Test
+    @DisplayName("register — deve normalizar o email antes de checar duplicidade")
+    void register_normalizesEmail() {
+        RegisterInput input = new RegisterInput("Eduardo", "  Eduardo@Email.com  ", "123456");
+
+        when(userRepository.existsByEmail("eduardo@email.com")).thenReturn(false);
+        when(passwordEncoder.encode(input.password())).thenReturn("hashedPassword");
+        when(userRepository.save(any(User.class))).thenReturn(user);
+
+        authService.register(input);
+
+        verify(userRepository).existsByEmail("eduardo@email.com");
     }
 
     @Test
@@ -91,6 +120,7 @@ class AuthServiceTest {
                 .hasMessage("Email já cadastrado");
 
         verify(userRepository, never()).save(any());
+        verifyNoInteractions(emailService, passwordTokenRepository);
     }
 
     // -------------------------------------------------------------------------
@@ -114,7 +144,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("login — deve lançar exceção quando credenciais são inválidas")
+    @DisplayName("login — deve lançar BusinessException quando credenciais são inválidas")
     void login_invalidCredentials() {
         LoginInput input = new LoginInput("eduardo@email.com", "senhaerrada");
 
@@ -122,7 +152,8 @@ class AuthServiceTest {
                 .when(authenticationManager).authenticate(any());
 
         assertThatThrownBy(() -> authService.login(input))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Credenciais inválidas");
 
         verify(jwtService, never()).generateToken(any());
     }
