@@ -1,15 +1,17 @@
 package com.eduardo.ecomerce.infra.shipping;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Map;
 
 @Slf4j
 @Component
@@ -23,6 +25,12 @@ public class CorreiosClient {
     @Value("${correios.codigo-acesso}")
     private String codigoAcesso;
 
+    @Value("${correios.cartao-postagem}")
+    private String cartaoPostagem;
+
+    @Value("${correios.numero-contrato}")
+    private String numeroContrato;
+
     private String cachedToken;
     private Instant tokenExpiresAt;
 
@@ -33,22 +41,38 @@ public class CorreiosClient {
     }
 
     private synchronized String getToken() {
-        if (cachedToken != null && tokenExpiresAt != null && Instant.now().isBefore(tokenExpiresAt)) {
+        log.info("Gerando token com cartão de postagem: {}", cartaoPostagem);
+
+        if (cachedToken != null
+                && tokenExpiresAt != null
+                && Instant.now().isBefore(tokenExpiresAt)) {
             return cachedToken;
         }
 
         String credentials = Base64.getEncoder()
-                .encodeToString((usuario + ":" + codigoAcesso).getBytes());
+                .encodeToString(
+                        (usuario + ":" + codigoAcesso)
+                                .getBytes(StandardCharsets.UTF_8)
+                );
 
         JsonNode response = restClient.post()
-                .uri("/token/v1/autentica")
+                .uri("/token/v1/autentica/cartaopostagem")
                 .header(HttpHeaders.AUTHORIZATION, "Basic " + credentials)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of(
+                        "numero", cartaoPostagem,
+                        "contrato", numeroContrato
+                ))
                 .retrieve()
                 .body(JsonNode.class);
 
+        log.info("Resposta bruta do token: {}", response);
+
         cachedToken = response.get("token").asText();
         tokenExpiresAt = Instant.now().plusSeconds(3300);
+
         log.info("Token dos Correios renovado");
+
         return cachedToken;
     }
 

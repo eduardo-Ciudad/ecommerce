@@ -20,30 +20,30 @@ import java.util.UUID;
 public class AddressController {
 
     private final AddressService addressService;
-    private final SecurityUtils securityUtils;
+
 
     @PostMapping
     public ResponseEntity<AddressOutput> create(@RequestBody @Valid AddressInput input) {
-        UUID userId = securityUtils.getAuthenticatedUserId();
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
         AddressOutput output = addressService.create(userId, input);
         return ResponseEntity.status(HttpStatus.CREATED).body(output);
     }
 
     @GetMapping
     public ResponseEntity<List<AddressOutput>> findByUser() {
-        UUID userId = securityUtils.getAuthenticatedUserId();
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
         return ResponseEntity.ok(addressService.findByUserId(userId));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<AddressOutput> update(@PathVariable UUID id, @RequestBody @Valid AddressInput input) {
-        UUID userId = securityUtils.getAuthenticatedUserId();
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
         return ResponseEntity.ok(addressService.update(userId, id, input));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        UUID userId = securityUtils.getAuthenticatedUserId();
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
         addressService.delete(userId, id);
         return ResponseEntity.noContent().build();
     }
