@@ -11,19 +11,12 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.util.UriBuilder;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-
-/**
- * Camada de chamadas HTTP para a API v3 do Bling.
- * Não gerencia estado de token (cache/persistência) — isso é responsabilidade
- * do BlingService, conforme a arquitetura em camadas definida para a integração.
- *
- * TODO: o path exato do endpoint de token ("/Api/v3/oauth/token") é uma suposição
- * baseada no padrão OAuth2 do Bling e ainda não foi confirmado contra a
- * documentação atual da API v3. Validar antes do primeiro teste real.
- */
+import java.util.function.Function;
 
 
 @Slf4j
@@ -81,6 +74,30 @@ public class BlingClient {
         } catch (RestClientException e) {
             log.error("Falha na chamada de token do Bling", e);
             throw new BlingIntegrationException("Falha ao obter/renovar token do Bling", e);
+        }
+    }
+
+    public JsonNode listProducts(String accessToken, int page) {
+        return authenticatedGet(
+                accessToken,
+                uriBuilder -> uriBuilder
+                        .path("/produtos")
+                        .queryParam("pagina", page)
+                        .build()
+        );
+    }
+
+    private JsonNode authenticatedGet(String accessToken, Function<UriBuilder, URI> uriFunction) {
+        try {
+            return restClient.get()
+                    .uri(uriFunction::apply)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                    .header("enable-jwt", "1")
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientException e) {
+            log.error("Falha em chamada autenticada à API do Bling", e);
+            throw new BlingIntegrationException("Falha ao consultar a API do Bling", e);
         }
     }
 }
