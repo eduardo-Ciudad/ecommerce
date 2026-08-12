@@ -6,12 +6,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
+import java.util.function.Supplier;
 
 @Slf4j
 @Component
@@ -41,7 +44,6 @@ public class CorreiosClient {
     }
 
     private synchronized String getToken() {
-        log.info("Gerando token com cartão de postagem: {}", cartaoPostagem);
 
         if (cachedToken != null
                 && tokenExpiresAt != null
@@ -66,7 +68,7 @@ public class CorreiosClient {
                 .retrieve()
                 .body(JsonNode.class);
 
-        log.info("Resposta bruta do token: {}", response);
+
 
         cachedToken = response.get("token").asText();
         tokenExpiresAt = Instant.now().plusSeconds(3300);
@@ -76,9 +78,30 @@ public class CorreiosClient {
         return cachedToken;
     }
 
+    private synchronized void invalidarToken() {
+        this.cachedToken = null;
+        this.tokenExpiresAt = null;
+    }
+
+    private JsonNode executarComRetry(Supplier<JsonNode> chamada) {
+        try {
+            return chamada.get();
+        } catch (HttpClientErrorException.Unauthorized e) {
+            log.warn("Token dos Correios rejeitado (401), renovando e tentando novamente");
+            invalidarToken();
+            try {
+                return chamada.get();
+            } catch (Exception retryEx) {
+                throw new CorreiosException("Falha na integração com os Correios após renovar token", retryEx);
+            }
+        } catch (RestClientException e) {
+            throw new CorreiosException("Falha na integração com os Correios", e);
+        }
+    }
+
     public JsonNode consultarPreco(String coProduto, String cepOrigem, String cepDestino,
                                    int pesoGramas, int comprimento, int altura, int largura) {
-        return restClient.get()
+        return executarComRetry(() -> restClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/preco/v1/nacional/{coProduto}")
                         .queryParam("cepOrigem", cepOrigem)
@@ -90,11 +113,11 @@ public class CorreiosClient {
                         .build(coProduto))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + getToken())
                 .retrieve()
-                .body(JsonNode.class);
+                .body(JsonNode.class));
     }
 
     public JsonNode consultarPrazo(String coProduto, String cepOrigem, String cepDestino) {
-        return restClient.get()
+        return executarComRetry(() -> restClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/prazo/v1/nacional/{coProduto}")
                         .queryParam("cepOrigem", cepOrigem)
@@ -102,6 +125,6 @@ public class CorreiosClient {
                         .build(coProduto))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + getToken())
                 .retrieve()
-                .body(JsonNode.class);
+                .body(JsonNode.class));
     }
 }

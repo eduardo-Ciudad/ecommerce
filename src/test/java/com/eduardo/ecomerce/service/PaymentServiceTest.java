@@ -71,7 +71,7 @@ class PaymentServiceTest {
 
         Payment mpPayment = mockPayment("987654321", "approved", "accredited", orderId);
 
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any())).thenReturn(mpPayment);
 
         PaymentOutput result = paymentService.processPayment(input, "cliente@teste.com");
@@ -88,7 +88,7 @@ class PaymentServiceTest {
 
         Payment mpPayment = mockPayment("987654322", "rejected", "cc_rejected_insufficient_amount", orderId);
 
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any())).thenReturn(mpPayment);
 
         PaymentOutput result = paymentService.processPayment(input, "cliente@teste.com");
@@ -103,7 +103,7 @@ class PaymentServiceTest {
 
         Payment mpPayment = mockPixPayment("987654323", "pending", orderId, "00020126...codigo-pix", "base64-qr-image");
 
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any())).thenReturn(mpPayment);
 
         PaymentOutput result = paymentService.processPayment(input, "cliente@teste.com");
@@ -117,7 +117,7 @@ class PaymentServiceTest {
     void processPayment_pedidoNaoEncontrado_lancaExcecao() {
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
 
-        when(orderRepository.findById(orderId)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentService.processPayment(input, "cliente@teste.com"))
                 .isInstanceOf(EntityNotFoundException.class);
@@ -128,7 +128,7 @@ class PaymentServiceTest {
     void processPayment_pedidoNaoPertenceAoUsuario_lancaBusinessException() throws Exception {
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
 
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.processPayment(input, "outro@teste.com"))
                 .isInstanceOf(BusinessException.class)
@@ -143,7 +143,7 @@ class PaymentServiceTest {
         order.setPaymentId("existing-payment-id");
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
 
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.processPayment(input, "cliente@teste.com"))
                 .isInstanceOf(BusinessException.class)
@@ -158,7 +158,7 @@ class PaymentServiceTest {
         order.setStatus(OrderStatus.PAID);
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
 
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.processPayment(input, "cliente@teste.com"))
                 .isInstanceOf(BusinessException.class)
