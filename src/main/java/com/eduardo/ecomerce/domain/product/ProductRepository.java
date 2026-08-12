@@ -10,5 +10,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
     List<Product> findByActiveTrue();
     boolean existsByCategoryId(UUID categoryId);
+    Optional<Product> findByBlingProductId(Long blingProductId);
+
 
 }
