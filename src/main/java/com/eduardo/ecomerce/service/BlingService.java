@@ -2,6 +2,8 @@ package com.eduardo.ecomerce.service;
 
 import com.eduardo.ecomerce.domain.blingtoken.BlingToken;
 import com.eduardo.ecomerce.domain.blingtoken.BlingTokenRepository;
+import com.eduardo.ecomerce.domain.category.Category;
+import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.eduardo.ecomerce.infra.bling.BlingIntegrationException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,14 +23,20 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-
 public class BlingService {
 
+    private static final int CATEGORIES_PAGE_LIMIT = 100;
+    private static final int MAX_PAGES_SAFETY_LIMIT = 500;
+
     private final BlingTokenRepository blingTokenRepository;
+    private final CategoryRepository categoryRepository;
     private final BlingClient blingClient;
     private final String authorizeUrl;
     private final String clientId;
 
+    // States pendentes de confirmação no callback OAuth. Expiram em 10 minutos
+    // (tempo mais que suficiente para o usuário aprovar o app no Bling) e são
+    // de uso único — removidos assim que validados.
     private final Cache<String, Boolean> pendingStates = Caffeine.newBuilder()
             .expireAfterWrite(10, TimeUnit.MINUTES)
             .maximumSize(100)
@@ -36,11 +44,13 @@ public class BlingService {
 
     public BlingService(
             BlingTokenRepository blingTokenRepository,
+            CategoryRepository categoryRepository,
             BlingClient blingClient,
             @Value("${bling.authorize-url}") String authorizeUrl,
             @Value("${bling.client-id}") String clientId
     ) {
         this.blingTokenRepository = blingTokenRepository;
+        this.categoryRepository = categoryRepository;
         this.blingClient = blingClient;
         this.authorizeUrl = authorizeUrl;
         this.clientId = clientId;
@@ -86,6 +96,44 @@ public class BlingService {
         }
 
         return token.getAccessToken();
+    }
+
+    @Transactional
+    public void syncCategories() {
+        String accessToken = getValidAccessToken();
+        int page = 1;
+        int syncedCount = 0;
+
+        while (page <= MAX_PAGES_SAFETY_LIMIT) {
+            JsonNode response = blingClient.getCategories(accessToken, page, CATEGORIES_PAGE_LIMIT);
+            JsonNode data = response.get("data");
+
+            if (data == null || !data.isArray() || data.isEmpty()) {
+                break;
+            }
+
+            for (JsonNode categoryNode : data) {
+                upsertCategory(categoryNode);
+                syncedCount++;
+            }
+
+            page++;
+        }
+
+        log.info("Sincronização de categorias do Bling concluída: {} categorias processadas", syncedCount);
+    }
+
+    private void upsertCategory(JsonNode categoryNode) {
+        Long blingCategoryId = categoryNode.get("id").asLong();
+        String descricao = categoryNode.get("descricao").asText();
+
+        Category category = categoryRepository.findByBlingCategoryId(blingCategoryId)
+                .orElseGet(Category::new);
+
+        category.setBlingCategoryId(blingCategoryId);
+        category.setName(descricao);
+
+        categoryRepository.save(category);
     }
 
     private BlingToken saveToken(JsonNode response) {

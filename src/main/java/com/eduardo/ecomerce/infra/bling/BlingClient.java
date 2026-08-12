@@ -100,4 +100,15 @@ public class BlingClient {
             throw new BlingIntegrationException("Falha ao consultar a API do Bling", e);
         }
     }
+
+    public JsonNode getCategories(String accessToken, int page, int limit) {
+        return authenticatedGet(
+                accessToken,
+                uriBuilder -> uriBuilder
+                        .path("/categorias/produtos")
+                        .queryParam("pagina", page)
+                        .queryParam("limite", limit)
+                        .build()
+        );
+    }
 }
