@@ -39,6 +39,9 @@ public class Product {
     @Column(nullable = false)
     private Boolean active = true;
 
+    @Column(name = "bling_product_id", unique = true)
+    private Long blingProductId;
+
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL)
     private List<ProductVariant> variants = new ArrayList<>();
 

@@ -34,6 +34,13 @@ public class ProductVariant {
     @Column(nullable = false)
     private Integer stock = 0;
 
+    @Column(name = "bling_variation_id", unique = true)
+    private Long blingVariationId;
+
+    @Column(length = 100, unique = true)
+    private String sku;
+
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
