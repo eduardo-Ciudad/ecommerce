@@ -81,7 +81,7 @@ public class BlingClient {
         return authenticatedGet(
                 accessToken,
                 uriBuilder -> uriBuilder
-                        .path("/produtos")
+                        .path("/produtos/list")
                         .queryParam("pagina", page)
                         .build()
         );
@@ -101,14 +101,14 @@ public class BlingClient {
         }
     }
 
-    public JsonNode getCategories(String accessToken, int page, int limit) {
+    public JsonNode getProductById(String accessToken, Long id) {
         return authenticatedGet(
                 accessToken,
                 uriBuilder -> uriBuilder
-                        .path("/categorias/produtos")
-                        .queryParam("pagina", page)
-                        .queryParam("limite", limit)
-                        .build()
+                        .path("/produtos/{id}")
+                        .build(id)
         );
     }
+
+
 }
