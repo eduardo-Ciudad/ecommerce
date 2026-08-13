@@ -57,6 +57,49 @@ public class BlingClient {
         return postToken(body);
     }
 
+    public JsonNode listProducts(String accessToken, int page) {
+        return authenticatedGet(
+                accessToken,
+                uriBuilder -> uriBuilder
+                        .path("/produtos/list")
+                        .queryParam("pagina", page)
+                        .build()
+        );
+    }
+
+    public JsonNode getProductById(String accessToken, Long id) {
+        return authenticatedGet(
+                accessToken,
+                uriBuilder -> uriBuilder
+                        .path("/produtos/{id}")
+                        .build(id)
+        );
+    }
+
+    public JsonNode getCategories(String accessToken, int page, int limit) {
+        return authenticatedGet(
+                accessToken,
+                uriBuilder -> uriBuilder
+                        .path("/categorias/produtos")
+                        .queryParam("pagina", page)
+                        .queryParam("limite", limit)
+                        .build()
+        );
+    }
+
+    private JsonNode authenticatedGet(String accessToken, Function<UriBuilder, URI> uriFunction) {
+        try {
+            return restClient.get()
+                    .uri(uriFunction::apply)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                    .header("enable-jwt", "1")
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientException e) {
+            log.error("Falha em chamada autenticada à API do Bling", e);
+            throw new BlingIntegrationException("Falha ao consultar a API do Bling", e);
+        }
+    }
 
     private JsonNode postToken(MultiValueMap<String, String> body) {
         String credentials = Base64.getEncoder()
@@ -76,39 +119,4 @@ public class BlingClient {
             throw new BlingIntegrationException("Falha ao obter/renovar token do Bling", e);
         }
     }
-
-    public JsonNode listProducts(String accessToken, int page) {
-        return authenticatedGet(
-                accessToken,
-                uriBuilder -> uriBuilder
-                        .path("/produtos/list")
-                        .queryParam("pagina", page)
-                        .build()
-        );
-    }
-
-    private JsonNode authenticatedGet(String accessToken, Function<UriBuilder, URI> uriFunction) {
-        try {
-            return restClient.get()
-                    .uri(uriFunction::apply)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                    .header("enable-jwt", "1")
-                    .retrieve()
-                    .body(JsonNode.class);
-        } catch (RestClientException e) {
-            log.error("Falha em chamada autenticada à API do Bling", e);
-            throw new BlingIntegrationException("Falha ao consultar a API do Bling", e);
-        }
-    }
-
-    public JsonNode getProductById(String accessToken, Long id) {
-        return authenticatedGet(
-                accessToken,
-                uriBuilder -> uriBuilder
-                        .path("/produtos/{id}")
-                        .build(id)
-        );
-    }
-
-
 }

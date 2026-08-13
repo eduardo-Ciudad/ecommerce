@@ -7,5 +7,6 @@ import java.util.UUID;
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, UUID> {
 
     Optional<ProductVariant> findByBlingVariationId(Long blingVariationId);
+    Optional<ProductVariant> findBySku(String sku);
 
 }
