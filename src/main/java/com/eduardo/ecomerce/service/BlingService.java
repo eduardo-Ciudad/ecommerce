@@ -106,6 +106,8 @@ public class BlingService {
         this.clientId = clientId;
     }
 
+
+
     public String buildAuthorizationUrl() {
         String state = UUID.randomUUID().toString();
         pendingStates.put(state, Boolean.TRUE);
@@ -199,9 +201,14 @@ public class BlingService {
      * chamadas HTTP terem retornado.
      */
     public void syncProducts() {
+        syncProducts(MAX_PAGES_SAFETY_LIMIT);
+    }
+
+
+    public void syncProducts(int maxPages) {
         String accessToken = getValidAccessToken();
 
-        List<ProductListItem> allItems = fetchAllProductListItems(accessToken);
+        List<ProductListItem> allItems = fetchAllProductListItems(accessToken, maxPages);
         ClassifiedListItems classified = classifyListItems(allItems);
 
         int variantsSynced = 0;
@@ -240,11 +247,12 @@ public class BlingService {
         );
     }
 
-    private List<ProductListItem> fetchAllProductListItems(String accessToken) {
+    private List<ProductListItem> fetchAllProductListItems(String accessToken, int maxPages) {
         List<ProductListItem> items = new ArrayList<>();
         int page = 1;
+        int lastPage = Math.min(maxPages, MAX_PAGES_SAFETY_LIMIT);
 
-        while (page <= MAX_PAGES_SAFETY_LIMIT) {
+        while (page <= lastPage) {
             JsonNode response = blingClient.listProducts(accessToken, page);
             JsonNode data = response.get("data");
 

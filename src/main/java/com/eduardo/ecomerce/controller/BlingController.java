@@ -5,14 +5,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
 
-@Slf4j
+ @Slf4j
 @RestController
 @RequestMapping("/bling")
 @RequiredArgsConstructor
@@ -21,11 +18,9 @@ public class BlingController {
     private final BlingService blingService;
 
     @GetMapping("/authorize")
-    public ResponseEntity<Void> authorize() {
+    public ResponseEntity<AuthorizationUrlOutput> authorize() {
         String authorizationUrl = blingService.buildAuthorizationUrl();
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(authorizationUrl))
-                .build();
+        return ResponseEntity.ok(new AuthorizationUrlOutput(authorizationUrl));
     }
 
     @GetMapping("/callback")
@@ -42,5 +37,19 @@ public class BlingController {
         blingService.handleAuthorizationCode(code);
 
         return ResponseEntity.ok("Integração com o Bling autorizada com sucesso.");
+    }
+
+    @PostMapping("/sync/categories")
+    public ResponseEntity<String> syncCategories() {
+        blingService.syncCategories();
+        return ResponseEntity.ok("Sincronização de categorias concluída.");
+    }
+
+    @PostMapping("/sync/products")
+    public ResponseEntity<String> syncProducts(
+            @RequestParam(defaultValue = "1") int maxPages
+    ) {
+        blingService.syncProducts(maxPages);
+        return ResponseEntity.ok("Sincronização de produtos concluída (máx. " + maxPages + " página(s) da listagem).");
     }
 }
