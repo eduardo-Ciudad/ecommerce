@@ -62,8 +62,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/shipping/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html", "/v3/api-docs").permitAll().requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
                         .requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/payments/process").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/payments/process").authenticated().requestMatchers("/addresses/**").authenticated()
                         .requestMatchers("/addresses/**").authenticated()
+                        .requestMatchers("/bling/callback").permitAll()
+                        .requestMatchers("/bling/webhook").permitAll().requestMatchers("/bling/authorize").hasRole("ADMIN")
+                        .requestMatchers("/bling/authorize").hasRole("ADMIN")
+// rotas de admin
 
                         // rotas de admin
                         .requestMatchers(HttpMethod.POST, "/products/**").hasRole("ADMIN")
