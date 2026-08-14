@@ -1,5 +1,6 @@
 package com.eduardo.ecomerce.controller;
 
+import com.eduardo.ecomerce.dto.output.bling.AuthorizationUrlOutput;
 import com.eduardo.ecomerce.service.BlingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
