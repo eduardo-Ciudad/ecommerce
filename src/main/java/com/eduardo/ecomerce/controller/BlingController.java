@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.dto.output.bling.AuthorizationUrlOutput;
+import com.eduardo.ecomerce.dto.output.bling.SyncProductsResult;
 import com.eduardo.ecomerce.service.BlingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,13 +47,13 @@ public class BlingController {
         return ResponseEntity.ok("Sincronização de categorias concluída.");
     }
 
-    @PostMapping("/sync/products")
-    public ResponseEntity<String> syncProducts(
-            @RequestParam(defaultValue = "1") int maxPages
-    ) {
-        blingService.syncProducts(maxPages);
-        return ResponseEntity.ok("Sincronização de produtos concluída (máx. " + maxPages + " página(s) da listagem).");
-    }
+     @PostMapping("/sync/products")
+     public ResponseEntity<SyncProductsResult> syncProducts(
+             @RequestParam(defaultValue = "1") int maxPages
+     ) {
+         SyncProductsResult result = blingService.syncProducts(maxPages);
+         return ResponseEntity.ok(result);
+     }
 
      @GetMapping("/debug/inspect")
      public ResponseEntity<String> debugInspect(

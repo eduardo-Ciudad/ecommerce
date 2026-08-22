@@ -3,6 +3,7 @@ package com.eduardo.ecomerce.infra.bling;
 
 import com.eduardo.ecomerce.infra.http.AppRestClientFactory;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriBuilder;
@@ -41,10 +43,13 @@ public class BlingClient {
 
     private final AtomicLong lastRequestTimestamp = new AtomicLong(0);
 
+    private final ObjectMapper objectMapper;
+
     public BlingClient(
             AppRestClientFactory restClientFactory,
-            @Value("${bling.api-base-url}") String apiBaseUrl
+            @Value("${bling.api-base-url}") String apiBaseUrl, ObjectMapper objectMapper
     ) {
+        this.objectMapper = objectMapper;
         this.restClient = restClientFactory.create(apiBaseUrl);
     }
 
@@ -125,13 +130,26 @@ public class BlingClient {
                     .retrieve()
                     .body(JsonNode.class);
         } catch (HttpClientErrorException.Unauthorized e) {
-            log.warn("Token do Bling rejeitado (401) em chamada autenticada");
-            throw new BlingUnauthorizedException("Token do Bling expirado ou inválido", e);
+            JsonNode errorBody = parseErrorBody(e);
+            String type = extractBlingErrorField(errorBody, "type");
+            String description = extractBlingErrorField(errorBody, "description");
+            log.warn("Token do Bling rejeitado (401): type={}, description={}", type, description);
+            throw new BlingUnauthorizedException(
+                    "Token do Bling expirado ou inválido: " + description, e, 401, type, description
+            );
+        } catch (HttpStatusCodeException e) {
+            JsonNode errorBody = parseErrorBody(e);
+            String type = extractBlingErrorField(errorBody, "type");
+            String description = extractBlingErrorField(errorBody, "description");
+            int status = e.getStatusCode().value();
+            log.error("Erro HTTP {} em chamada autenticada à API do Bling: type={}, description={}", status, type, description);
+            throw new BlingIntegrationException(
+                    "Falha ao consultar a API do Bling (HTTP " + status + "): " + description, e, status, type, description
+            );
         } catch (RestClientException e) {
             log.error("Falha em chamada autenticada à API do Bling", e);
             throw new BlingIntegrationException("Falha ao consultar a API do Bling", e);
         }
-
     }
 
     private JsonNode postToken(MultiValueMap<String, String> body) {
@@ -148,9 +166,34 @@ public class BlingClient {
                     .body(body)
                     .retrieve()
                     .body(JsonNode.class);
+        } catch (HttpStatusCodeException e) {
+            JsonNode errorBody = parseErrorBody(e);
+            String type = extractBlingErrorField(errorBody, "type");
+            String description = extractBlingErrorField(errorBody, "description");
+            int status = e.getStatusCode().value();
+            log.error("Erro HTTP {} na chamada de token do Bling: type={}, description={}", status, type, description);
+            throw new BlingIntegrationException(
+                    "Falha ao obter/renovar token do Bling (HTTP " + status + "): " + description, e, status, type, description
+            );
         } catch (RestClientException e) {
             log.error("Falha na chamada de token do Bling", e);
             throw new BlingIntegrationException("Falha ao obter/renovar token do Bling", e);
         }
+    }
+
+    private JsonNode parseErrorBody(HttpStatusCodeException e) {
+        try {
+            return objectMapper.readTree(e.getResponseBodyAsString());
+        } catch (Exception parseError) {
+            return null;
+        }
+    }
+
+    private String extractBlingErrorField(JsonNode errorBody, String field) {
+        if (errorBody == null) {
+            return null;
+        }
+        JsonNode value = errorBody.path("error").path(field);
+        return value.isMissingNode() || value.isNull() ? null : value.asText();
     }
 }

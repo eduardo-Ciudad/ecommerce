@@ -8,6 +8,7 @@ import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
+import com.eduardo.ecomerce.dto.output.bling.SyncProductsResult;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.eduardo.ecomerce.infra.bling.BlingIntegrationException;
 import com.eduardo.ecomerce.infra.bling.BlingUnauthorizedException;
@@ -178,12 +179,36 @@ public class BlingService {
         Long blingCategoryId = categoryNode.get("id").asLong();
         String descricao = categoryNode.get("descricao").asText();
 
-        Category category = categoryRepository.findByBlingCategoryId(blingCategoryId)
-                .orElseGet(Category::new);
+        Optional<Category> byBlingId = categoryRepository.findByBlingCategoryId(blingCategoryId);
 
+        if (byBlingId.isPresent()) {
+            Category category = byBlingId.get();
+            category.setName(descricao);
+            categoryRepository.save(category);
+            return;
+        }
+
+        Optional<Category> byName = categoryRepository.findByName(descricao);
+
+        if (byName.isPresent()) {
+            Category category = byName.get();
+            if (category.getBlingCategoryId() != null && !category.getBlingCategoryId().equals(blingCategoryId)) {
+                log.error(
+                        "Conflito de categoria: nome '{}' já está vinculado a blingCategoryId={}, "
+                                + "mas o Bling está enviando blingCategoryId={} para o mesmo nome — pulando",
+                        descricao, category.getBlingCategoryId(), blingCategoryId
+                );
+                return;
+            }
+
+            category.setBlingCategoryId(blingCategoryId);
+            categoryRepository.save(category);
+            return;
+        }
+
+        Category category = new Category();
         category.setBlingCategoryId(blingCategoryId);
         category.setName(descricao);
-
         categoryRepository.save(category);
     }
 
@@ -199,12 +224,12 @@ public class BlingService {
      * persistida em sua própria transação curta, aberta só depois das
      * chamadas HTTP terem retornado.
      */
-    public void syncProducts() {
-        syncProducts(MAX_PAGES_SAFETY_LIMIT);
+    public SyncProductsResult syncProducts() {
+        return syncProducts(MAX_PAGES_SAFETY_LIMIT);
     }
 
 
-    public void syncProducts(int maxPages) {
+    public SyncProductsResult syncProducts(int maxPages) {
         AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
 
         List<ProductListItem> allItems = fetchAllProductListItems(tokenRef, maxPages);
@@ -228,6 +253,7 @@ public class BlingService {
         }
 
         int standaloneSynced = 0;
+        int standaloneSkipped = 0;
 
         for (ProductListItem item : classified.standaloneItems()) {
             try {
@@ -235,15 +261,27 @@ public class BlingService {
                 standaloneSynced++;
             } catch (Exception e) {
                 log.error("Falha ao sincronizar produto simples do Bling (id={})", item.id(), e);
+                standaloneSkipped++;
             }
         }
+
+        SyncProductsResult result = new SyncProductsResult(
+                classified.parentNames().size(),
+                variantsSynced,
+                variantsSkipped,
+                standaloneSynced,
+                standaloneSkipped
+        );
 
         log.info(
                 "Sincronização de produtos do Bling concluída: {} produtos pai identificados, "
                         + "{} variações sincronizadas, {} variações puladas (conflito/erro), "
-                        + "{} produtos simples sincronizados",
-                classified.parentNames().size(), variantsSynced, variantsSkipped, standaloneSynced
+                        + "{} produtos simples sincronizados, {} produtos simples pulados (erro)",
+                result.parentProductsFound(), result.variantsSynced(), result.variantsSkipped(),
+                result.standaloneSynced(), result.standaloneSkipped()
         );
+
+        return result;
     }
 
     private List<ProductListItem> fetchAllProductListItems(AtomicReference<String> tokenRef, int maxPages) {
