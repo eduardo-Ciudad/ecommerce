@@ -10,6 +10,7 @@ import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.eduardo.ecomerce.infra.bling.BlingIntegrationException;
+import com.eduardo.ecomerce.infra.bling.BlingUnauthorizedException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -20,7 +21,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
-
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -126,14 +128,35 @@ public class BlingService {
         return token.getAccessToken();
     }
 
+    private String forceRefreshAccessToken() {
+        BlingToken token = blingTokenRepository.findFirstByOrderByUpdatedAtDesc()
+                .orElseThrow(() -> new BlingIntegrationException(
+                        "Nenhum token do Bling encontrado — autorização ainda não foi realizada", null));
+
+        log.info("Renovando access token do Bling após 401 recebido da API");
+        JsonNode response = blingClient.refreshAccessToken(token.getRefreshToken());
+        return saveToken(response).getAccessToken();
+    }
+
+    private JsonNode callWithRetry(AtomicReference<String> tokenRef, Function<String, JsonNode> apiCall) {
+        try {
+            return apiCall.apply(tokenRef.get());
+        } catch (BlingUnauthorizedException e) {
+            String newToken = forceRefreshAccessToken();
+            tokenRef.set(newToken);
+            return apiCall.apply(newToken);
+        }
+    }
+
     @Transactional
     public void syncCategories() {
-        String accessToken = getValidAccessToken();
+        AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
         int page = 1;
         int syncedCount = 0;
 
         while (page <= MAX_PAGES_SAFETY_LIMIT) {
-            JsonNode response = blingClient.getCategories(accessToken, page, CATEGORIES_PAGE_LIMIT);
+            int currentPage = page;
+            JsonNode response = callWithRetry(tokenRef, token -> blingClient.getCategories(token, currentPage, CATEGORIES_PAGE_LIMIT));
             JsonNode data = response.get("data");
 
             if (data == null || !data.isArray() || data.isEmpty()) {
@@ -182,9 +205,9 @@ public class BlingService {
 
 
     public void syncProducts(int maxPages) {
-        String accessToken = getValidAccessToken();
+        AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
 
-        List<ProductListItem> allItems = fetchAllProductListItems(accessToken, maxPages);
+        List<ProductListItem> allItems = fetchAllProductListItems(tokenRef, maxPages);
         ClassifiedListItems classified = classifyListItems(allItems);
 
         int variantsSynced = 0;
@@ -192,7 +215,7 @@ public class BlingService {
 
         for (ProductListItem item : classified.variantItems()) {
             try {
-                boolean synced = upsertProductFromVariation(accessToken, item, classified.parentNames());
+                boolean synced = upsertProductFromVariation(tokenRef, item, classified.parentNames());
                 if (synced) {
                     variantsSynced++;
                 } else {
@@ -208,7 +231,7 @@ public class BlingService {
 
         for (ProductListItem item : classified.standaloneItems()) {
             try {
-                upsertProductSimples(accessToken, item);
+                upsertProductSimples(tokenRef, item);
                 standaloneSynced++;
             } catch (Exception e) {
                 log.error("Falha ao sincronizar produto simples do Bling (id={})", item.id(), e);
@@ -223,13 +246,14 @@ public class BlingService {
         );
     }
 
-    private List<ProductListItem> fetchAllProductListItems(String accessToken, int maxPages) {
+    private List<ProductListItem> fetchAllProductListItems(AtomicReference<String> tokenRef, int maxPages) {
         List<ProductListItem> items = new ArrayList<>();
         int page = 1;
         int lastPage = Math.min(maxPages, MAX_PAGES_SAFETY_LIMIT);
 
         while (page <= lastPage) {
-            JsonNode response = blingClient.listProducts(accessToken, page);
+            int currentPage = page;
+            JsonNode response = callWithRetry(tokenRef, token -> blingClient.listProducts(token, currentPage));
             JsonNode data = response.get("data");
 
             if (data == null || !data.isArray() || data.isEmpty()) {
@@ -285,8 +309,9 @@ public class BlingService {
      * (categoria ausente, produto pai não encontrado na listagem, ou
      * conflito de categoria com o produto pai já existente).
      */
-    private boolean upsertProductFromVariation(String accessToken, ProductListItem item, Map<Long, String> parentNames) {
-        JsonNode detail = blingClient.getProductById(accessToken, item.id());
+
+    private boolean upsertProductFromVariation(AtomicReference<String> tokenRef, ProductListItem item, Map<Long, String> parentNames) {
+        JsonNode detail = callWithRetry(tokenRef, token -> blingClient.getProductById(token, item.id()));
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
@@ -327,8 +352,8 @@ public class BlingService {
         }));
     }
 
-    private void upsertProductSimples(String accessToken, ProductListItem item) {
-        JsonNode detail = blingClient.getProductById(accessToken, item.id());
+    private void upsertProductSimples(AtomicReference<String> tokenRef, ProductListItem item) {
+        JsonNode detail = callWithRetry(tokenRef, token -> blingClient.getProductById(token, item.id()));
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
