@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.infra.persistence;
 
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +29,7 @@ public class EncryptedStringConverter implements AttributeConverter<String, Stri
     private final SecretKeySpec key;
     private final SecureRandom secureRandom;
 
+    @Autowired
     public EncryptedStringConverter(@Value("${app.encryption-key}") String encodedKey) {
         this(encodedKey, new SecureRandom());
     }
