@@ -354,6 +354,7 @@ public class BlingService {
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
         String size = extractSize(detail);
+        String imageUrl = extractImageUrl(detail);
 
         if (blingCategoryId == null) {
             log.error("Variação do Bling sem categoria.id (blingVariationId={}), pulando", item.id());
@@ -380,7 +381,7 @@ public class BlingService {
                 return false;
             }
 
-            Product product = resolveParentProduct(item.idProdutoPai(), item.id(), parentNome, category);
+            Product product = resolveParentProduct(item.idProdutoPai(), item.id(), parentNome, category, imageUrl);
             if (product == null) {
                 return false; // conflito de categoria já logado dentro de resolveParentProduct
             }
@@ -388,6 +389,8 @@ public class BlingService {
             upsertVariant(product, item.id(), item.sku(), item.price(), stock, size);
             return true;
         }));
+
+
     }
 
     private void upsertProductSimples(AtomicReference<String> tokenRef, ProductListItem item) {
@@ -395,6 +398,7 @@ public class BlingService {
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
+        String imageUrl = extractImageUrl(detail);
 
         if (blingCategoryId == null) {
             log.error("Produto simples do Bling sem categoria.id (blingProductId={}), pulando", item.id());
@@ -416,6 +420,9 @@ public class BlingService {
             product.setBlingProductId(item.id());
             product.setName(item.nome());
             product.setCategory(category);
+            if (imageUrl != null) {
+                product.setImageUrl(imageUrl);
+            }
             product = productRepository.save(product);
 
             upsertVariant(product, null, item.sku(), item.price(), stock, null);
@@ -429,7 +436,7 @@ public class BlingService {
      * criar/atualizar a variante deste ciclo (decisão: não sobrescrever
      * categoria silenciosamente, e não sincronizar a relação conflitante).
      */
-    private Product resolveParentProduct(Long blingProductId, Long blingVariationId, String nome, Category category) {
+    private Product resolveParentProduct(Long blingProductId, Long blingVariationId, String nome, Category category, String imageUrl) {
         Optional<Product> existing = productRepository.findByBlingProductId(blingProductId);
 
         if (existing.isEmpty()) {
@@ -437,6 +444,9 @@ public class BlingService {
             product.setBlingProductId(blingProductId);
             product.setName(nome);
             product.setCategory(category);
+            if (imageUrl != null) {
+                product.setImageUrl(imageUrl);
+            }
             return productRepository.save(product);
         }
 
@@ -451,6 +461,10 @@ public class BlingService {
                     blingProductId, blingVariationId, currentCategoryId, category.getBlingCategoryId()
             );
             return null;
+        }
+
+        if (imageUrl != null) {
+            product.setImageUrl(imageUrl);
         }
 
         return product;
@@ -545,4 +559,15 @@ public class BlingService {
             log.info("[DEBUG BLING] Detalhe do produto {} (bruto): {}", sampleProductId, detailResponse.toPrettyString());
         }
     }
+
+    private String extractImageUrl(JsonNode detail) {
+        JsonNode internas = detail.path("data").path("midia").path("imagens").path("internas");
+        if (!internas.isArray() || internas.isEmpty()) {
+            return null;
+        }
+
+        JsonNode link = internas.get(0).path("link");
+        return link.isMissingNode() || link.isNull() ? null : link.asText();
+    }
+
 }
