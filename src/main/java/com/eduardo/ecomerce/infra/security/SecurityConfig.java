@@ -54,22 +54,36 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // rotas públicas
+                        // Auth
                         .requestMatchers(HttpMethod.POST, "/auth/change-password").authenticated()
                         .requestMatchers("/auth/**").permitAll()
+
+                        // Produtos e catálogo público
                         .requestMatchers(HttpMethod.GET, "/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/categories/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/shipping/**").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html", "/v3/api-docs").permitAll().requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/payments/process").authenticated().requestMatchers("/addresses/**").authenticated()
-                        .requestMatchers("/addresses/**").authenticated()
-                        .requestMatchers("/bling/callback").permitAll()
-                        .requestMatchers("/bling/webhook").permitAll().requestMatchers("/bling/authorize").hasRole("ADMIN")
-                        .requestMatchers("/bling/authorize").hasRole("ADMIN")
-// rotas de admin
 
-                        // rotas de admin
+                        // Documentação pública
+                        .requestMatchers(
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs"
+                        ).permitAll()
+
+                        // Webhooks públicos
+                        .requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
+                        .requestMatchers("/bling/webhook").permitAll()
+
+                        // Pedidos e dados do cliente autenticado
+                        .requestMatchers(HttpMethod.POST, "/payments/process").authenticated()
+                        .requestMatchers("/addresses/**").authenticated()
+
+                        // Bling
+                        .requestMatchers("/bling/callback").permitAll()
+                        .requestMatchers("/bling/authorize").hasRole("ADMIN")
+
+                        // Administração de produtos e categorias
                         .requestMatchers(HttpMethod.POST, "/products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/products/**").hasRole("ADMIN")
@@ -78,8 +92,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/categories/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/categories/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/categories/**").hasRole("ADMIN")
+
+                        // Administração de pedidos
                         .requestMatchers(HttpMethod.PUT, "/orders/*/status").hasRole("ADMIN")
+
+                        // Administração do Bling
                         .requestMatchers("/bling/sync/**").hasRole("ADMIN")
+
+                        // Demais endpoints exigem autenticação
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())
