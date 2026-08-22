@@ -1,5 +1,6 @@
 package com.eduardo.ecomerce.domain.blingtoken;
 
+import com.eduardo.ecomerce.infra.persistence.EncryptedStringConverter;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,9 +21,11 @@ public class BlingToken {
     private UUID id;
 
     @Column(name = "access_token", nullable = false, columnDefinition = "TEXT")
+    @Convert(converter = EncryptedStringConverter.class)
     private String accessToken;
 
     @Column(name = "refresh_token", nullable = false, columnDefinition = "TEXT")
+    @Convert(converter = EncryptedStringConverter.class)
     private String refreshToken;
 
     @Column(name = "expires_at", nullable = false)
