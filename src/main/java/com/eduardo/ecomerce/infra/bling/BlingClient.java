@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriBuilder;
@@ -123,10 +124,14 @@ public class BlingClient {
                     .header("enable-jwt", "1")
                     .retrieve()
                     .body(JsonNode.class);
+        } catch (HttpClientErrorException.Unauthorized e) {
+            log.warn("Token do Bling rejeitado (401) em chamada autenticada");
+            throw new BlingUnauthorizedException("Token do Bling expirado ou inválido", e);
         } catch (RestClientException e) {
             log.error("Falha em chamada autenticada à API do Bling", e);
             throw new BlingIntegrationException("Falha ao consultar a API do Bling", e);
         }
+
     }
 
     private JsonNode postToken(MultiValueMap<String, String> body) {
