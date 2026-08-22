@@ -446,24 +446,20 @@ public class BlingService {
     }
 
     private Integer extractStock(JsonNode detail) {
-        JsonNode estoqueAtual = detail.path("estoque").path("estoqueAtual");
-        if (!estoqueAtual.isArray()) {
-            return 0;
-        }
-
-        int total = 0;
-        for (JsonNode deposito : estoqueAtual) {
-            total += deposito.path("saldo").asInt(0);
-        }
-        return total;
+        JsonNode saldo = detail.path("data").path("estoque").path("saldoVirtualTotal");
+        return saldo.isMissingNode() || saldo.isNull() ? 0 : saldo.asInt(0);
     }
 
+
     private String extractSize(JsonNode detail) {
-        JsonNode atributos = detail.path("data").path("atributos");
-        if (!atributos.isArray() || atributos.isEmpty()) {
+        JsonNode nome = detail.path("data").path("variacao").path("nome");
+        if (nome.isMissingNode() || nome.isNull()) {
             return null;
         }
-        return atributos.get(0).asText();
+
+        String raw = nome.asText(); // ex: "tamanho:10"
+        int colonIndex = raw.indexOf(':');
+        return colonIndex >= 0 ? raw.substring(colonIndex + 1).trim() : raw;
     }
 
     private BlingToken saveToken(JsonNode response) {
