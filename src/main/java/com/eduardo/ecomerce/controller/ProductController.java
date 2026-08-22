@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
+import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
 import com.eduardo.ecomerce.service.ProductService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -9,6 +10,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,12 +42,13 @@ public class ProductController {
     }
 
     @GetMapping
-    @Operation(summary = "Listar produtos ativos", description = "Retorna a lista de todos os produtos ativos cadastrados")
+    @Operation(summary = "Listar produtos ativos", description = "Retorna a lista paginada de produtos ativos cadastrados")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
+            @ApiResponse(responseCode = "200", description = "Página retornada com sucesso")
     })
-    public ResponseEntity<List<ProductOutput>> findAll() {
-        return ResponseEntity.ok(productService.findAllActive());
+    public ResponseEntity<PageResponse<ProductOutput>> findAll(
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(productService.findAllActive(pageable));
     }
 
     @GetMapping("/{id}")

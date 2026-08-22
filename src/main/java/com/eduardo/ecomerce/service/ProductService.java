@@ -5,12 +5,14 @@ import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
+import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
 import com.eduardo.ecomerce.dto.output.productvariant.ProductVariantOutput;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -41,8 +43,8 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public List<ProductOutput> findAllActive() {
-        return productRepository.findByActiveTrue().stream().map(this::toOutput).toList();
+    public PageResponse<ProductOutput> findAllActive(Pageable pageable) {
+        return PageResponse.from(productRepository.findByActiveTrue(pageable).map(this::toOutput));
     }
 
     @Transactional(readOnly = true)
