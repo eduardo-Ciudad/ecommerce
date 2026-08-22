@@ -275,10 +275,10 @@ public class BlingService {
                 node.get("id").asLong(),
                 node.get("nome").asText(),
                 node.get("codigo").asText(),
-                new BigDecimal(node.get("precoSemFormatacao").asText()),
-                node.get("idProdutoPai").asLong(),
-                node.get("isVariacao").asBoolean(),
-                node.get("isVariacaoPai").asBoolean()
+                new BigDecimal(node.path("preco").asText()),
+                node.path("idProdutoPai").asLong(),
+                node.path("isVariacao").asBoolean(),
+                node.path("isVariacaoPai").asBoolean()
         );
     }
 
@@ -436,7 +436,7 @@ public class BlingService {
     }
 
     private Long extractCategoryId(JsonNode detail) {
-        JsonNode categoria = detail.path("categoria");
+        JsonNode categoria = detail.path("data").path("categoria");
         JsonNode id = categoria.path("id");
         return id.isMissingNode() || id.isNull() ? null : id.asLong();
     }
@@ -455,7 +455,7 @@ public class BlingService {
     }
 
     private String extractSize(JsonNode detail) {
-        JsonNode atributos = detail.path("atributos");
+        JsonNode atributos = detail.path("data").path("atributos");
         if (!atributos.isArray() || atributos.isEmpty()) {
             return null;
         }
@@ -493,5 +493,22 @@ public class BlingService {
             List<ProductListItem> variantItems,
             List<ProductListItem> standaloneItems
     ) {
+    }
+
+    /**
+     * Diagnóstico temporário: consulta uma única página da listagem e o
+     * detalhe de um produto específico, e loga o JSON bruto para investigação
+     * do contrato real da API v3. Não participa do fluxo de sincronização.
+     */
+    public void debugInspectBlingContract(Long sampleProductId) {
+        String accessToken = getValidAccessToken();
+
+        JsonNode listResponse = blingClient.listProducts(accessToken, 1);
+        log.info("[DEBUG BLING] Listagem página 1 (bruto): {}", listResponse.toPrettyString());
+
+        if (sampleProductId != null) {
+            JsonNode detailResponse = blingClient.getProductById(accessToken, sampleProductId);
+            log.info("[DEBUG BLING] Detalhe do produto {} (bruto): {}", sampleProductId, detailResponse.toPrettyString());
+        }
     }
 }

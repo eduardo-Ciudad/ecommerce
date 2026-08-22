@@ -63,8 +63,9 @@ public class BlingClient {
         return authenticatedGet(
                 accessToken,
                 uriBuilder -> uriBuilder
-                        .path("/produtos/list")
+                        .path("/produtos")
                         .queryParam("pagina", page)
+                        .queryParam("limite", 100)
                         .build()
         );
     }
