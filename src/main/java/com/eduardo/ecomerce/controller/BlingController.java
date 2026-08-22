@@ -53,4 +53,12 @@ public class BlingController {
         blingService.syncProducts(maxPages);
         return ResponseEntity.ok("Sincronização de produtos concluída (máx. " + maxPages + " página(s) da listagem).");
     }
+
+     @GetMapping("/debug/inspect")
+     public ResponseEntity<String> debugInspect(
+             @RequestParam(required = false) Long sampleProductId
+     ) {
+         blingService.debugInspectBlingContract(sampleProductId);
+         return ResponseEntity.ok("Diagnóstico executado, verifique os logs da aplicação.");
+     }
 }

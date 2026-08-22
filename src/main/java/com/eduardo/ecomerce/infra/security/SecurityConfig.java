@@ -81,7 +81,7 @@ public class SecurityConfig {
 
                         // Bling
                         .requestMatchers("/bling/callback").permitAll()
-                        .requestMatchers("/bling/authorize").hasRole("ADMIN")
+                        .requestMatchers("/bling/authorize", "/bling/sync/**", "/bling/debug/**").hasRole("ADMIN")
 
                         // Administração de produtos e categorias
                         .requestMatchers(HttpMethod.POST, "/products/**").hasRole("ADMIN")

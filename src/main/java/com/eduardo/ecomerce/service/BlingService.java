@@ -271,14 +271,18 @@ public class BlingService {
     }
 
     private ProductListItem parseListItem(JsonNode node) {
+        JsonNode idProdutoPaiNode = node.path("idProdutoPai");
+        Long idProdutoPai = idProdutoPaiNode.isMissingNode() || idProdutoPaiNode.isNull()
+                ? null
+                : idProdutoPaiNode.asLong();
+
         return new ProductListItem(
                 node.get("id").asLong(),
                 node.get("nome").asText(),
                 node.get("codigo").asText(),
-                new BigDecimal(node.path("preco").asText()),
-                node.path("idProdutoPai").asLong(),
-                node.path("isVariacao").asBoolean(),
-                node.path("isVariacaoPai").asBoolean()
+                new BigDecimal(node.path("preco").asText("0")),
+                idProdutoPai,
+                node.path("formato").asText("")
         );
     }
 
@@ -288,10 +292,10 @@ public class BlingService {
         List<ProductListItem> standaloneItems = new ArrayList<>();
 
         for (ProductListItem item : items) {
-            if (item.isVariacaoPai()) {
-                parentNames.put(item.id(), item.nome());
-            } else if (item.isVariacao()) {
+            if (item.idProdutoPai() != null) {
                 variantItems.add(item);
+            } else if ("V".equals(item.formato())) {
+                parentNames.put(item.id(), item.nome());
             } else {
                 standaloneItems.add(item);
             }
@@ -483,8 +487,7 @@ public class BlingService {
             String sku,
             BigDecimal price,
             Long idProdutoPai,
-            boolean isVariacao,
-            boolean isVariacaoPai
+            String formato
     ) {
     }
 
