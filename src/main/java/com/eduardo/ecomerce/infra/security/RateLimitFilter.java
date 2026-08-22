@@ -6,6 +6,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,10 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
@@ -31,6 +36,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
             .expireAfterAccess(1, TimeUnit.MINUTES)
             .maximumSize(1000)
             .build();
+    private final Set<String> trustedProxies;
+
+    public RateLimitFilter(@Value("${app.trusted-proxies:}") String trustedProxies) {
+        this.trustedProxies = Arrays.stream(trustedProxies.split(","))
+                .map(String::trim)
+                .filter(proxy -> !proxy.isEmpty())
+                .collect(Collectors.toUnmodifiableSet());
+    }
 
     @Override
     protected void doFilterInternal(
@@ -62,11 +75,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
         } else {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
             response.getWriter().write("{\"error\": \"Muitas requisições. Tente novamente em instantes.\"}");
         }
     }
 
     private String getClientIp(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        if (!trustedProxies.contains(remoteAddr)) {
+            return remoteAddr;
+        }
+
         String xff = request.getHeader("X-Forwarded-For");
         if (xff != null && !xff.isBlank()) {
             return xff.split(",")[0].trim();
@@ -75,7 +94,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (realIp != null && !realIp.isBlank()) {
             return realIp.trim();
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
     }
 
     private Bucket newBucket(int capacity) {

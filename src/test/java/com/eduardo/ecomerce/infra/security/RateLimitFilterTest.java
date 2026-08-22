@@ -17,7 +17,7 @@ class RateLimitFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new RateLimitFilter();
+        filter = new RateLimitFilter("127.0.0.1");
         filterChain = mock(FilterChain.class);
     }
 
@@ -154,6 +154,29 @@ class RateLimitFilterTest {
         var request = new MockHttpServletRequest("POST", "/auth/login");
         request.setRemoteAddr("127.0.0.1");
         request.addHeader("X-Real-IP", "198.51.100.99");
+        var response = new MockHttpServletResponse();
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    @DisplayName("Deve ignorar headers de IP enviados por origem não confiável")
+    void ignoresSpoofedForwardedHeadersFromUntrustedOrigin() throws Exception {
+        filter = new RateLimitFilter("127.0.0.1");
+
+        for (int i = 0; i < 10; i++) {
+            var request = new MockHttpServletRequest("POST", "/auth/login");
+            request.setRemoteAddr("198.51.100.10");
+            request.addHeader("X-Forwarded-For", "203.0.113." + i);
+            request.addHeader("X-Real-IP", "192.0.2." + i);
+            filter.doFilterInternal(request, new MockHttpServletResponse(), filterChain);
+        }
+
+        var request = new MockHttpServletRequest("POST", "/auth/login");
+        request.setRemoteAddr("198.51.100.10");
+        request.addHeader("X-Forwarded-For", "203.0.113.250");
+        request.addHeader("X-Real-IP", "192.0.2.250");
         var response = new MockHttpServletResponse();
         filter.doFilterInternal(request, response, filterChain);
 
