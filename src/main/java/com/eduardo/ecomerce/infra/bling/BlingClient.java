@@ -17,6 +17,7 @@ import org.springframework.web.util.UriBuilder;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 
@@ -35,11 +36,34 @@ public class BlingClient {
     @Value("${bling.redirect-uri}")
     private String redirectUri;
 
+    private static final long MIN_INTERVAL_MILLIS = 350; // um pouco acima de 333ms (3 req/s) por margem de segurança
+
+    private final AtomicLong lastRequestTimestamp = new AtomicLong(0);
+
     public BlingClient(
             AppRestClientFactory restClientFactory,
             @Value("${bling.api-base-url}") String apiBaseUrl
     ) {
         this.restClient = restClientFactory.create(apiBaseUrl);
+    }
+
+
+
+    private void throttle() {
+        long now = System.currentTimeMillis();
+        long last = lastRequestTimestamp.get();
+        long elapsed = now - last;
+
+        if (elapsed < MIN_INTERVAL_MILLIS) {
+            try {
+                Thread.sleep(MIN_INTERVAL_MILLIS - elapsed);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new BlingIntegrationException("Interrompido durante throttle de requisição ao Bling", e);
+            }
+        }
+
+        lastRequestTimestamp.set(System.currentTimeMillis());
     }
 
     public JsonNode exchangeCodeForToken(String code) {
@@ -91,6 +115,7 @@ public class BlingClient {
     }
 
     private JsonNode authenticatedGet(String accessToken, Function<UriBuilder, URI> uriFunction) {
+        throttle();
         try {
             return restClient.get()
                     .uri(uriFunction::apply)
@@ -105,6 +130,7 @@ public class BlingClient {
     }
 
     private JsonNode postToken(MultiValueMap<String, String> body) {
+        throttle();
         String credentials = Base64.getEncoder()
                 .encodeToString((clientId + ":" + clientSecret).getBytes(StandardCharsets.UTF_8));
 

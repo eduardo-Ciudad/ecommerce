@@ -31,30 +31,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Orquestra autenticação e renovação do token OAuth do Bling, e a
- * sincronização inicial de categorias/catálogo/produtos.
- * BlingClient só executa a chamada HTTP; este serviço decide quando renovar
- * e é responsável por persistir tokens/entidades sincronizadas.
- *
- * TODO: os nomes dos campos do corpo de resposta do endpoint de token
- * ("access_token", "refresh_token", "expires_in") seguem o padrão OAuth2
- * convencional e ainda não foram confirmados contra uma resposta real do
- * Bling. Validar no primeiro teste do fluxo de autorização.
- *
- * TODO: a chave "data" como wrapper do array de resultados em
- * GET /categorias/produtos e GET /produtos/list é uma suposição (baseada no
- * formato de resposta já confirmado para uma entidade única), ainda não
- * confirmada para respostas de listagem paginada. Validar no primeiro teste
- * de syncCategories/syncProducts.
- *
- * TODO: a estrutura de "estoque.estoqueAtual" no detalhe de produto
- * (GET /produtos/{id}) foi confirmada como array com pelo menos um objeto
- * contendo "saldo", mas não foi confirmado se representa múltiplos depósitos.
- * extractStock() soma o "saldo" de todos os itens do array — se o Bling só
- * tiver 1 depósito na prática, o resultado é o mesmo; se houver múltiplos
- * depósitos e a soma não for o comportamento desejado, ajustar aqui.
- */
 @Slf4j
 @Service
 public class BlingService {
@@ -494,11 +470,7 @@ public class BlingService {
     ) {
     }
 
-    /**
-     * Diagnóstico temporário: consulta uma única página da listagem e o
-     * detalhe de um produto específico, e loga o JSON bruto para investigação
-     * do contrato real da API v3. Não participa do fluxo de sincronização.
-     */
+
     public void debugInspectBlingContract(Long sampleProductId) {
         String accessToken = getValidAccessToken();
 
