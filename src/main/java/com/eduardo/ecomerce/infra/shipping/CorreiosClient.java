@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.infra.shipping;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.eduardo.ecomerce.infra.http.AppRestClientFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -37,10 +38,11 @@ public class CorreiosClient {
     private String cachedToken;
     private Instant tokenExpiresAt;
 
-    public CorreiosClient() {
-        this.restClient = RestClient.builder()
-                .baseUrl("https://api.correios.com.br")
-                .build();
+    public CorreiosClient(
+            AppRestClientFactory restClientFactory,
+            @Value("${correios.api-base-url:https://api.correios.com.br}") String apiBaseUrl
+    ) {
+        this.restClient = restClientFactory.create(apiBaseUrl);
     }
 
     private synchronized String getToken() {

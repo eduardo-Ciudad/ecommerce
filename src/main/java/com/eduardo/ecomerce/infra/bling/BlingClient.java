@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.infra.bling;
 
 
+import com.eduardo.ecomerce.infra.http.AppRestClientFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,10 +35,11 @@ public class BlingClient {
     @Value("${bling.redirect-uri}")
     private String redirectUri;
 
-    public BlingClient(@Value("${bling.api-base-url}") String apiBaseUrl) {
-        this.restClient = RestClient.builder()
-                .baseUrl(apiBaseUrl)
-                .build();
+    public BlingClient(
+            AppRestClientFactory restClientFactory,
+            @Value("${bling.api-base-url}") String apiBaseUrl
+    ) {
+        this.restClient = restClientFactory.create(apiBaseUrl);
     }
 
     public JsonNode exchangeCodeForToken(String code) {
