@@ -15,6 +15,7 @@ import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.domain.user.User;
 import com.eduardo.ecomerce.domain.user.UserRepository;
 import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
+import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
 import com.eduardo.ecomerce.dto.output.orderitem.OrderItemOutput;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
@@ -22,6 +23,7 @@ import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -117,12 +119,14 @@ public class OrderService {
         return toOutput(order);
     }
 
-    @Transactional(readOnly = true)
-    public List<OrderOutput> findByUserId(UUID userId) {
+
+
+
+    public PageResponse<OrderOutput> findByUserId(UUID userId, Pageable pageable) {
         if (!userRepository.existsById(userId)) {
             throw new ResourceNotFoundException("Usuário não encontrado");
         }
-        return orderRepository.findByUserId(userId).stream().map(this::toOutput).toList();
+        return PageResponse.from(orderRepository.findByUserId(userId, pageable).map(this::toOutput));
     }
 
     @Transactional(readOnly = true)

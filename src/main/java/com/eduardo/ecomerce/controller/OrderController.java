@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
+import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
 import com.eduardo.ecomerce.infra.security.SecurityUtils;
 import com.eduardo.ecomerce.service.OrderService;
@@ -11,6 +12,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -44,9 +47,10 @@ public class OrderController {
             @ApiResponse(responseCode = "200", description = "Lista de pedidos retornada com sucesso"),
             @ApiResponse(responseCode = "401", description = "Usuário não autenticado")
     })
-    public ResponseEntity<List<OrderOutput>> findAll() {
+    public ResponseEntity<PageResponse<OrderOutput>> findAll(
+            @PageableDefault(size = 20) Pageable pageable) {
         UUID userId = SecurityUtils.getAuthenticatedUserId();
-        return ResponseEntity.ok(orderService.findByUserId(userId));
+        return ResponseEntity.ok(orderService.findByUserId(userId, pageable));
     }
 
     @GetMapping("/{id}")
