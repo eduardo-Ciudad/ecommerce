@@ -12,6 +12,7 @@ import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,8 +44,11 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ProductOutput> findAllActive(Pageable pageable) {
-        return PageResponse.from(productRepository.findByActiveTrue(pageable).map(this::toOutput));
+    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage) {
+        Page<Product> page = includeWithoutImage
+                ? productRepository.findByActiveTrue(pageable)
+                : productRepository.findByActiveTrueAndImageUrlIsNotNull(pageable);
+        return PageResponse.from(page.map(this::toOutput));
     }
 
     @Transactional(readOnly = true)

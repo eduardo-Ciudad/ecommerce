@@ -47,8 +47,9 @@ public class ProductController {
             @ApiResponse(responseCode = "200", description = "Página retornada com sucesso")
     })
     public ResponseEntity<PageResponse<ProductOutput>> findAll(
-            @PageableDefault(size = 20) Pageable pageable) {
-        return ResponseEntity.ok(productService.findAllActive(pageable));
+            @PageableDefault(size = 20) Pageable pageable,
+            @RequestParam(name = "includeWithoutImage", defaultValue = "false") boolean includeWithoutImage) {
+        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage));
     }
 
     @GetMapping("/{id}")
