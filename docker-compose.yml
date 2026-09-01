@@ -7,15 +7,21 @@ services:
       POSTGRES_DB: ecommerce_db
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+          test: [ "CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ecommerce_db" ]
+          interval: 5s
+          timeout: 5s
+          retries: 10
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+     - postgres_data:/var/lib/postgresql/data
 
   backend:
     build: .
     container_name: ecommerce_backend
     restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ecommerce_db
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
@@ -33,6 +39,20 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS}
       MAIL_USERNAME: ${MAIL_USERNAME}
       MAIL_PASSWORD: ${MAIL_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES}
+      HTTP_CONNECT_TIMEOUT_MS: ${HTTP_CONNECT_TIMEOUT_MS}
+      HTTP_READ_TIMEOUT_MS: ${HTTP_READ_TIMEOUT_MS}
+      CORREIOS_API_BASE_URL: ${CORREIOS_API_BASE_URL}
+      CORREIOS_USUARIO: ${CORREIOS_USUARIO}
+      CORREIOS_CODIGO_ACESSO: ${CORREIOS_CODIGO_ACESSO}
+      CORREIOS_CARTAO_POSTAGEM: ${CORREIOS_CARTAO_POSTAGEM}
+      CORREIOS_NUMERO_CONTRATO: ${CORREIOS_NUMERO_CONTRATO}
+      BLING_API_BASE_URL: ${BLING_API_BASE_URL}
+      BLING_CLIENT_ID: ${BLING_CLIENT_ID}
+      BLING_CLIENT_SECRET: ${BLING_CLIENT_SECRET}
+      BLING_REDIRECT_URI: ${BLING_REDIRECT_URI}
+      BLING_AUTHORIZE_URL: ${BLING_AUTHORIZE_URL}
     ports:
       - "8081:8080"
 
