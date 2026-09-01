@@ -257,10 +257,13 @@ public class BlingService {
 
         for (ProductListItem item : classified.standaloneItems()) {
             try {
-                upsertProductSimples(tokenRef, item);
-                standaloneSynced++;
+                boolean synced = upsertProductSimples(tokenRef, item);
+                if (synced) {
+                    standaloneSynced++;
+                } else {
+                    standaloneSkipped++;
+                }
             } catch (Exception e) {
-                log.error("Falha ao sincronizar produto simples do Bling (id={})", item.id(), e);
                 standaloneSkipped++;
             }
         }
@@ -393,19 +396,20 @@ public class BlingService {
 
     }
 
-    private void upsertProductSimples(AtomicReference<String> tokenRef, ProductListItem item) {
+    private boolean upsertProductSimples(AtomicReference<String> tokenRef, ProductListItem item) {
         JsonNode detail = callWithRetry(tokenRef, token -> blingClient.getProductById(token, item.id()));
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
         String imageUrl = extractImageUrl(detail);
 
+
         if (blingCategoryId == null) {
             log.error("Produto simples do Bling sem categoria.id (blingProductId={}), pulando", item.id());
-            return;
+            return false;
         }
 
-        transactionTemplate.executeWithoutResult(status -> {
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
             Category category = categoryRepository.findByBlingCategoryId(blingCategoryId).orElse(null);
             if (category == null) {
                 log.error(
@@ -413,7 +417,7 @@ public class BlingService {
                                 + "— rode syncCategories antes de syncProducts",
                         blingCategoryId, item.id()
                 );
-                return;
+                return false;
             }
 
             Product product = productRepository.findByBlingProductId(item.id()).orElseGet(Product::new);
@@ -426,7 +430,8 @@ public class BlingService {
             product = productRepository.save(product);
 
             upsertVariant(product, null, item.sku(), item.price(), stock, null);
-        });
+            return true;
+        }));
     }
 
     /**
@@ -456,11 +461,12 @@ public class BlingService {
                 : null;
 
         if (currentCategoryId != null && !currentCategoryId.equals(category.getBlingCategoryId())) {
-            log.error(
-                    "Conflito de categoria: blingProductId={}, blingVariationId={}, categoria atual={}, categoria recebida={}",
+            log.warn(
+                    "Categoria alterada no Bling: blingProductId={}, blingVariationId={}, categoria atual={}, "
+                            + "nova categoria={} — atualizando (Bling é a fonte da verdade)",
                     blingProductId, blingVariationId, currentCategoryId, category.getBlingCategoryId()
             );
-            return null;
+            product.setCategory(category);
         }
 
         if (imageUrl != null) {
