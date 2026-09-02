@@ -55,6 +55,11 @@ class OrderRepositoryTest {
         assertThat(result.getId()).isEqualTo(order.getId());
     }
 
+    @Test
+    void findByIdForUpdate_pedidoInexistente_retornaOptionalVazio() {
+        assertThat(orderRepository.findByIdForUpdate(UUID.randomUUID())).isEmpty();
+    }
+
     private User persistUser() {
         User user = new User();
         user.setName("Cliente Teste");
