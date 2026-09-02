@@ -85,6 +85,8 @@ public class ProductController {
         return ResponseEntity.noContent().build();
     }
 
+
+
     @Operation(summary = "Upload de imagem do produto", description = "Faz upload de uma imagem (JPEG, PNG ou WebP, máx 5MB) e associa ao produto")
     @ApiResponse(responseCode = "200", description = "Imagem enviada com sucesso")
     @ApiResponse(responseCode = "404", description = "Produto não encontrado")
