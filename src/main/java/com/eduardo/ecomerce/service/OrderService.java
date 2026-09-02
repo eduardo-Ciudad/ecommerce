@@ -31,8 +31,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -46,6 +46,8 @@ public class OrderService {
     private final AddressRepository addressRepository;
     private final ShippingService shippingService;
     private final TransactionTemplate transactionTemplate;
+
+    public record ExpiringOrderSnapshot(UUID orderId, String paymentId, BigDecimal total) {}
 
     @Transactional
     public OrderOutput create(UUID userId, CreateOrderInput input) {
@@ -122,9 +124,6 @@ public class OrderService {
         return toOutput(order);
     }
 
-
-
-
     public PageResponse<OrderOutput> findByUserId(UUID userId, Pageable pageable) {
         if (!userRepository.existsById(userId)) {
             throw new ResourceNotFoundException("Usuário não encontrado");
@@ -163,35 +162,49 @@ public class OrderService {
         return toOutput(order);
     }
 
-
-
-    public String lockPendingOrderForExpiration(UUID orderId) {
+    public Optional<ExpiringOrderSnapshot> lockPendingOrderForExpiration(UUID orderId) {
         return transactionTemplate.execute(status -> {
             Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
 
             if (order == null || order.getStatus() != OrderStatus.PENDING) {
-                return null;
+                return Optional.empty();
             }
 
-            if (order.getPaymentId() == null) {
-                order.setStatus(OrderStatus.CANCELLED);
-                orderRepository.save(order);
-                restoreStock(order);
-                log.info("Pedido {} expirado sem pagamento associado — cancelado e estoque devolvido", orderId);
-                return null;
-            }
-
-            return order.getPaymentId();
+            return Optional.of(new ExpiringOrderSnapshot(order.getId(), order.getPaymentId(), order.getTotal()));
         });
+    }
+
+    public boolean cancelExpiredOrderWithoutPayment(UUID orderId) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+            Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+
+            boolean stillEligible = order != null
+                    && order.getStatus() == OrderStatus.PENDING
+                    && order.getPaymentId() == null;
+
+            if (!stillEligible) {
+                log.warn("Pedido {} mudou de estado durante a expiração (verificação de pagamento órfão) — nenhuma alteração aplicada. Requer investigação se inesperado.",
+                        orderId);
+                return false;
+            }
+
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepository.save(order);
+            restoreStock(order);
+            log.info("Pedido {} expirado sem pagamento (confirmado com o Mercado Pago) — cancelado e estoque devolvido",
+                    orderId);
+            return true;
+        }));
     }
 
     public boolean finalizeExpiredOrderCancellation(UUID orderId, String expectedPaymentId) {
         return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
             Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
 
-            boolean stillMatches = order != null
-                    && order.getStatus() == OrderStatus.PENDING
-                    && expectedPaymentId.equals(order.getPaymentId());
+            boolean paymentIdMatches = order != null
+                    && (order.getPaymentId() == null || expectedPaymentId.equals(order.getPaymentId()));
+
+            boolean stillMatches = paymentIdMatches && order.getStatus() == OrderStatus.PENDING;
 
             if (!stillMatches) {
                 log.warn("Pedido {} mudou de estado durante a expiração — payment {} foi cancelado no Mercado " +
@@ -199,6 +212,7 @@ public class OrderService {
                 return false;
             }
 
+            order.setPaymentId(expectedPaymentId);
             order.setStatus(OrderStatus.CANCELLED);
             orderRepository.save(order);
             restoreStock(order);

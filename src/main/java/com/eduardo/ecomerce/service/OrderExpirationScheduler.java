@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -46,10 +47,30 @@ public class OrderExpirationScheduler {
     }
 
     void processExpiredOrder(UUID orderId) {
-        String paymentId = orderService.lockPendingOrderForExpiration(orderId);
+        Optional<OrderService.ExpiringOrderSnapshot> snapshotOpt =
+                orderService.lockPendingOrderForExpiration(orderId);
+
+        if (snapshotOpt.isEmpty()) {
+            return;
+        }
+
+        OrderService.ExpiringOrderSnapshot snapshot = snapshotOpt.get();
+        String paymentId = snapshot.paymentId();
 
         if (paymentId == null) {
-            return;
+            PaymentService.OrphanedPaymentLookup lookup =
+                    paymentService.findExistingPaymentForOrder(snapshot.orderId(), snapshot.total());
+
+            switch (lookup.outcome()) {
+                case NOT_FOUND -> {
+                    orderService.cancelExpiredOrderWithoutPayment(orderId);
+                    return;
+                }
+                case FOUND -> paymentId = lookup.payment().getId().toString();
+                case AMBIGUOUS, FAILED -> {
+                    return;
+                }
+            }
         }
 
         PaymentService.PaymentCancellationOutcome outcome = paymentService.tryCancelPendingPayment(paymentId);
@@ -60,5 +81,4 @@ public class OrderExpirationScheduler {
 
         orderService.finalizeExpiredOrderCancellation(orderId, paymentId);
     }
-
 }
