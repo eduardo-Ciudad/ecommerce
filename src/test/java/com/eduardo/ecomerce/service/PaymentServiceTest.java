@@ -9,6 +9,8 @@ import com.eduardo.ecomerce.dto.input.payment.PaymentInput;
 import com.eduardo.ecomerce.dto.output.payment.PaymentOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.mercadopago.client.payment.PaymentClient;
+import com.mercadopago.net.MPResultsResourcesPage;
+import com.mercadopago.net.MPSearchRequest;
 import com.mercadopago.resources.payment.Payment;
 
 import com.mercadopago.resources.payment.*;
@@ -19,7 +21,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -27,6 +28,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -47,7 +49,6 @@ class PaymentServiceTest {
     @Mock
     private OrderService orderService;
 
-    @InjectMocks
     private PaymentService paymentService;
 
     private UUID orderId;
@@ -56,6 +57,7 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
+        paymentService = spy(new PaymentService(orderRepository, orderService, paymentClient));
         ReflectionTestUtils.setField(paymentService, "notificationUrl", "http://teste.com/payments/webhook");
 
         orderId = UUID.randomUUID();
@@ -68,6 +70,9 @@ class PaymentServiceTest {
         order.setTotal(new BigDecimal("150.00"));
         order.setStatus(OrderStatus.PENDING);
         order.setUser(user);
+
+        lenient().doReturn(PaymentService.OrphanedPaymentLookup.notFound())
+                .when(paymentService).findExistingPaymentForOrder(any(), any());
     }
 
     // ---------- processPayment ----------
@@ -173,6 +178,170 @@ class PaymentServiceTest {
                 .hasMessage("Pedido não está pendente de pagamento");
 
         verify(paymentClient, never()).create(any());
+    }
+
+    @Test
+    void findExistingPaymentForOrder_semResultados_retornaNotFound() throws Exception {
+        MPResultsResourcesPage<Payment> page = mockResultsPage(List.of());
+        when(paymentClient.search(any(MPSearchRequest.class))).thenReturn(page);
+        doCallRealMethod().when(paymentService).findExistingPaymentForOrder(any(), any());
+
+        PaymentService.OrphanedPaymentLookup result =
+                paymentService.findExistingPaymentForOrder(orderId, new BigDecimal("150.00"));
+
+        assertThat(result.outcome()).isEqualTo(PaymentService.OrphanedPaymentOutcome.NOT_FOUND);
+        assertThat(result.payment()).isNull();
+        verify(paymentClient).search(argThat(request ->
+                orderId.toString().equals(request.getFilters().get("external_reference"))));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"approved", "rejected", "pending", "in_process", "authorized"})
+    void findExistingPaymentForOrder_resultadoValido_retornaFound(String status) throws Exception {
+        Payment payment = mockPayment("801", status, "detail", orderId);
+        stubSearchResults(List.of(payment));
+        doCallRealMethod().when(paymentService).findExistingPaymentForOrder(any(), any());
+
+        PaymentService.OrphanedPaymentLookup result =
+                paymentService.findExistingPaymentForOrder(orderId, new BigDecimal("150.0"));
+
+        assertThat(result.outcome()).isEqualTo(PaymentService.OrphanedPaymentOutcome.FOUND);
+        assertThat(result.payment()).isSameAs(payment);
+    }
+
+    @Test
+    void findExistingPaymentForOrder_externalReferenceDiferente_retornaNotFound() throws Exception {
+        Payment payment = mockPayment("802", "approved", "detail", UUID.randomUUID());
+        assertLookupNotFoundFor(List.of(payment));
+    }
+
+    @Test
+    void findExistingPaymentForOrder_valorDiferente_retornaNotFound() throws Exception {
+        Payment payment = mockPayment("803", "approved", "detail", orderId);
+        when(payment.getTransactionAmount()).thenReturn(new BigDecimal("149.99"));
+        assertLookupNotFoundFor(List.of(payment));
+    }
+
+    @Test
+    void findExistingPaymentForOrder_valorNulo_retornaNotFound() throws Exception {
+        Payment payment = mockPayment("804", "approved", "detail", orderId);
+        when(payment.getTransactionAmount()).thenReturn(null);
+        assertLookupNotFoundFor(List.of(payment));
+    }
+
+    @Test
+    void findExistingPaymentForOrder_statusDesconhecido_retornaNotFound() throws Exception {
+        Payment payment = mockPayment("805", "refunded", "detail", orderId);
+        assertLookupNotFoundFor(List.of(payment));
+    }
+
+    @Test
+    void findExistingPaymentForOrder_resultadosMistos_retornaUnicoValido() throws Exception {
+        Payment wrongReference = mockPayment("806", "approved", "detail", UUID.randomUUID());
+        Payment wrongAmount = mockPayment("807", "approved", "detail", orderId);
+        when(wrongAmount.getTransactionAmount()).thenReturn(new BigDecimal("1.00"));
+        Payment wrongStatus = mockPayment("808", "refunded", "detail", orderId);
+        Payment valid = mockPayment("809", "pending", "detail", orderId);
+        stubSearchResults(List.of(wrongReference, wrongAmount, wrongStatus, valid));
+        doCallRealMethod().when(paymentService).findExistingPaymentForOrder(any(), any());
+
+        PaymentService.OrphanedPaymentLookup result =
+                paymentService.findExistingPaymentForOrder(orderId, order.getTotal());
+
+        assertThat(result.outcome()).isEqualTo(PaymentService.OrphanedPaymentOutcome.FOUND);
+        assertThat(result.payment()).isSameAs(valid);
+    }
+
+    @Test
+    void findExistingPaymentForOrder_maisDeUmResultadoValido_retornaAmbiguousELogaErro(CapturedOutput output)
+            throws Exception {
+        Payment first = mockPayment("810", "approved", "detail", orderId);
+        Payment second = mockPayment("811", "pending", "detail", orderId);
+        stubSearchResults(List.of(first, second));
+        doCallRealMethod().when(paymentService).findExistingPaymentForOrder(any(), any());
+
+        PaymentService.OrphanedPaymentLookup result =
+                paymentService.findExistingPaymentForOrder(orderId, order.getTotal());
+
+        assertThat(result.outcome()).isEqualTo(PaymentService.OrphanedPaymentOutcome.AMBIGUOUS);
+        assertThat(result.payment()).isNull();
+        assertThat(output).contains("Mais de um pagamento v").contains(orderId.toString());
+    }
+
+    @Test
+    void findExistingPaymentForOrder_buscaLancaExcecao_retornaFailedELogaErro(CapturedOutput output)
+            throws Exception {
+        when(paymentClient.search(any())).thenThrow(new RuntimeException("search failed"));
+        doCallRealMethod().when(paymentService).findExistingPaymentForOrder(any(), any());
+
+        PaymentService.OrphanedPaymentLookup result =
+                paymentService.findExistingPaymentForOrder(orderId, order.getTotal());
+
+        assertThat(result.outcome()).isEqualTo(PaymentService.OrphanedPaymentOutcome.FAILED);
+        assertThat(result.payment()).isNull();
+        assertThat(output).contains("Falha ao buscar pagamento existente").contains(orderId.toString());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"approved", "rejected"})
+    void processPayment_pagamentoOrfao_reaproveitaSemCriar(String status) throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
+        Payment payment = mockPayment("820", status, "detail", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        doReturn(PaymentService.OrphanedPaymentLookup.found(payment))
+                .when(paymentService).findExistingPaymentForOrder(orderId, order.getTotal());
+
+        PaymentOutput result = paymentService.processPayment(input, user.getEmail());
+
+        assertThat(result.id()).isEqualTo("820");
+        assertThat(order.getPaymentId()).isEqualTo("820");
+        assertThat(order.getPaymentStatus()).isEqualTo(status);
+        assertThat(order.getStatus()).isEqualTo(
+                "approved".equals(status) ? OrderStatus.PAID : OrderStatus.CANCELLED);
+        verify(paymentClient, never()).create(any());
+        verify(orderRepository).save(order);
+        if ("rejected".equals(status)) {
+            verify(orderService).restoreStock(order);
+        } else {
+            verify(orderService, never()).restoreStock(any());
+        }
+    }
+
+    @Test
+    void processPayment_lookupNotFound_criaNovoPagamento() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
+        Payment payment = mockPayment("821", "approved", "detail", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any())).thenReturn(payment);
+
+        paymentService.processPayment(input, user.getEmail());
+
+        verify(paymentService).findExistingPaymentForOrder(orderId, order.getTotal());
+        verify(paymentClient).create(argThat(request ->
+                orderId.toString().equals(request.getExternalReference())
+                        && order.getTotal().compareTo(request.getTransactionAmount()) == 0));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"AMBIGUOUS", "FAILED"})
+    void processPayment_lookupInconclusivo_lancaSemCriarNemAlterarPedido(String outcome) throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        PaymentService.OrphanedPaymentLookup lookup = "AMBIGUOUS".equals(outcome)
+                ? PaymentService.OrphanedPaymentLookup.ambiguous()
+                : PaymentService.OrphanedPaymentLookup.failed();
+        doReturn(lookup).when(paymentService).findExistingPaymentForOrder(orderId, order.getTotal());
+
+        assertThatThrownBy(() -> paymentService.processPayment(input, user.getEmail()))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getPaymentId()).isNull();
+        assertThat(order.getPaymentStatus()).isNull();
+        verify(paymentClient, never()).create(any());
+        verify(orderRepository, never()).save(any());
+        verify(orderService, never()).restoreStock(any());
     }
 
     // ---------- processWebhook ----------
@@ -394,6 +563,29 @@ class PaymentServiceTest {
         Payment payment = mockPayment(id, status, statusDetail, orderId);
         when(paymentClient.get(Long.parseLong(id))).thenReturn(payment);
         return payment;
+    }
+
+    @SuppressWarnings("unchecked")
+    private MPResultsResourcesPage<Payment> mockResultsPage(List<Payment> payments) {
+        MPResultsResourcesPage<Payment> page = mock(MPResultsResourcesPage.class);
+        when(page.getResults()).thenReturn(payments);
+        return page;
+    }
+
+    private void stubSearchResults(List<Payment> payments) throws Exception {
+        MPResultsResourcesPage<Payment> page = mockResultsPage(payments);
+        when(paymentClient.search(any())).thenReturn(page);
+    }
+
+    private void assertLookupNotFoundFor(List<Payment> payments) throws Exception {
+        stubSearchResults(payments);
+        doCallRealMethod().when(paymentService).findExistingPaymentForOrder(any(), any());
+
+        PaymentService.OrphanedPaymentLookup result =
+                paymentService.findExistingPaymentForOrder(orderId, order.getTotal());
+
+        assertThat(result.outcome()).isEqualTo(PaymentService.OrphanedPaymentOutcome.NOT_FOUND);
+        assertThat(result.payment()).isNull();
     }
 
     private Payment mockPayment(String id, String status, String statusDetail, UUID externalReference) {
