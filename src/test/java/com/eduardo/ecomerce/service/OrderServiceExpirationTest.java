@@ -3,299 +3,208 @@ package com.eduardo.ecomerce.service;
 import com.eduardo.ecomerce.domain.address.AddressRepository;
 import com.eduardo.ecomerce.domain.cart.CartRepository;
 import com.eduardo.ecomerce.domain.cartitem.CartItemRepository;
-import com.eduardo.ecomerce.domain.order.Order;
-import com.eduardo.ecomerce.domain.order.OrderRepository;
-import com.eduardo.ecomerce.domain.order.OrderStatus;
+import com.eduardo.ecomerce.domain.order.*;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
-import com.eduardo.ecomerce.domain.product.Product;
-import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
-import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
-import com.eduardo.ecomerce.domain.user.User;
+import com.eduardo.ecomerce.domain.productvariant.*;
 import com.eduardo.ecomerce.domain.user.UserRepository;
-import com.eduardo.ecomerce.infra.exception.BusinessException;
-import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.boot.test.system.*;
 import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.TransactionCallback;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.*;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class OrderServiceExpirationTest {
-
-    @Mock private OrderRepository orderRepository;
-    @Mock private CartRepository cartRepository;
-    @Mock private CartItemRepository cartItemRepository;
-    @Mock private UserRepository userRepository;
-    @Mock private ProductVariantRepository productVariantRepository;
-    @Mock private AddressRepository addressRepository;
-    @Mock private ShippingService shippingService;
-    @Mock private TransactionTemplate transactionTemplate;
-    @Mock private TransactionStatus transactionStatus;
-
-    private OrderService orderService;
+    @Mock OrderRepository orderRepository;
+    @Mock CartRepository cartRepository;
+    @Mock CartItemRepository cartItemRepository;
+    @Mock UserRepository userRepository;
+    @Mock ProductVariantRepository productVariantRepository;
+    @Mock AddressRepository addressRepository;
+    @Mock ShippingService shippingService;
+    @Mock TransactionTemplate transactionTemplate;
+    @Mock TransactionStatus transactionStatus;
+    OrderService service;
 
     @BeforeEach
     void setUp() {
-        orderService = spy(new OrderService(orderRepository, cartRepository, cartItemRepository, userRepository,
+        service = spy(new OrderService(orderRepository, cartRepository, cartItemRepository, userRepository,
                 productVariantRepository, addressRepository, shippingService, transactionTemplate));
-        lenient().doAnswer(invocation -> {
-            TransactionCallback<?> callback = invocation.getArgument(0);
-            return callback.doInTransaction(transactionStatus);
-        }).when(transactionTemplate).execute(any());
+        lenient().doAnswer(inv -> ((TransactionCallback<?>) inv.getArgument(0))
+                .doInTransaction(transactionStatus)).when(transactionTemplate).execute(any());
     }
 
     @Test
-    void restoreStock_pedidoComMultiplosItens_devolveQuantidadeParaCadaVariante() {
-        Order order = new Order();
-        ProductVariant first = variant(5);
-        ProductVariant second = variant(10);
-        order.getItems().add(item(order, first, 2));
-        order.getItems().add(item(order, second, 4));
+    void lockPendingOrderForExpiration_pendingSemPaymentId_retornaSnapshotSemAlterarPedido() {
+        Order order = order(OrderStatus.PENDING, null);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
-        orderService.restoreStock(order);
+        Optional<OrderService.ExpiringOrderSnapshot> result = service.lockPendingOrderForExpiration(order.getId());
 
-        assertThat(first.getStock()).isEqualTo(7);
-        assertThat(second.getStock()).isEqualTo(14);
-        verify(productVariantRepository).save(first);
-        verify(productVariantRepository).save(second);
+        assertThat(result).contains(new OrderService.ExpiringOrderSnapshot(order.getId(), null, order.getTotal()));
+        assertUnchanged(order, OrderStatus.PENDING, null);
     }
 
     @Test
-    void restoreStock_pedidoSemItens_naoPersisteVariantes() {
-        orderService.restoreStock(new Order());
+    void lockPendingOrderForExpiration_pendingComPaymentId_retornaSnapshotSemAlterarPedido() {
+        Order order = order(OrderStatus.PENDING, "payment-1");
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
-        verifyNoInteractions(productVariantRepository);
+        Optional<OrderService.ExpiringOrderSnapshot> result = service.lockPendingOrderForExpiration(order.getId());
+
+        assertThat(result).contains(new OrderService.ExpiringOrderSnapshot(
+                order.getId(), "payment-1", order.getTotal()));
+        assertUnchanged(order, OrderStatus.PENDING, "payment-1");
     }
 
     @Test
-    void updateStatus_transicaoParaCancelled_devolveEstoque() {
-        UUID orderId = UUID.randomUUID();
-        Order order = completeOrder(orderId, OrderStatus.PENDING);
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-
-        orderService.updateStatus(orderId, OrderStatus.CANCELLED);
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(orderRepository).save(order);
-        verify(orderService).restoreStock(order);
-    }
-
-    @Test
-    void updateStatus_transicaoNaoCancelada_naoDevolveEstoque() {
-        UUID orderId = UUID.randomUUID();
-        Order order = completeOrder(orderId, OrderStatus.PAID);
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-
-        orderService.updateStatus(orderId, OrderStatus.SHIPPED);
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.SHIPPED);
-        verify(orderRepository).save(order);
-        verify(orderService, never()).restoreStock(any());
-    }
-
-    @Test
-    void updateStatus_usaBuscaComLockPessimista() {
-        UUID orderId = UUID.randomUUID();
-        when(orderRepository.findByIdForUpdate(orderId))
-                .thenReturn(Optional.of(completeOrder(orderId, OrderStatus.PAID)));
-        orderService.updateStatus(orderId, OrderStatus.SHIPPED);
-
-        verify(orderRepository).findByIdForUpdate(orderId);
-        verify(orderRepository, never()).findById(orderId);
-    }
-
-    @Test
-    void updateStatus_mesmoStatus_lancaBusinessException() {
-        UUID orderId = UUID.randomUUID();
-        Order order = completeOrder(orderId, OrderStatus.PENDING);
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-
-        assertThatThrownBy(() -> orderService.updateStatus(orderId, OrderStatus.PENDING))
-                .isInstanceOf(BusinessException.class);
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+    void lockPendingOrderForExpiration_pedidoInexistente_retornaOptionalVazio() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(id)).thenReturn(Optional.empty());
+        assertThat(service.lockPendingOrderForExpiration(id)).isEmpty();
         verify(orderRepository, never()).save(any());
-        verify(orderService, never()).restoreStock(any());
+        verify(service, never()).restoreStock(any());
     }
 
     @Test
-    void updateStatus_transicaoNaoPermitida_lancaBusinessException() {
-        UUID orderId = UUID.randomUUID();
-        Order order = completeOrder(orderId, OrderStatus.PENDING);
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-
-        assertThatThrownBy(() -> orderService.updateStatus(orderId, OrderStatus.SHIPPED))
-                .isInstanceOf(BusinessException.class);
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
-        verify(orderRepository, never()).save(any());
-        verify(orderService, never()).restoreStock(any());
+    void lockPendingOrderForExpiration_pedidoNaoPending_retornaOptionalVazio() {
+        Order order = order(OrderStatus.PAID, null);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        assertThat(service.lockPendingOrderForExpiration(order.getId())).isEmpty();
+        assertUnchanged(order, OrderStatus.PAID, null);
     }
 
     @Test
-    void updateStatus_pedidoInexistente_lancaResourceNotFoundException() {
-        UUID orderId = UUID.randomUUID();
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
+    void cancelExpiredOrderWithoutPayment_pendingSemPaymentId_cancelaEDevolveEstoque() {
+        Order order = order(OrderStatus.PENDING, null);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.updateStatus(orderId, OrderStatus.CANCELLED))
-                .isInstanceOf(ResourceNotFoundException.class);
-    }
-
-    @Test
-    void lockPendingOrderForExpiration_pendingSemPaymentId_cancelaEDevolveEstoque() {
-        UUID orderId = UUID.randomUUID();
-        Order order = completeOrder(orderId, OrderStatus.PENDING);
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-
-        String paymentId = orderService.lockPendingOrderForExpiration(orderId);
-
-        assertThat(paymentId).isNull();
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(orderRepository).save(order);
-        verify(orderService).restoreStock(order);
-    }
-
-    @Test
-    void lockPendingOrderForExpiration_pendingComPaymentId_retornaIdSemAlterarPedido() {
-        UUID orderId = UUID.randomUUID();
-        Order order = completeOrder(orderId, OrderStatus.PENDING);
-        order.setPaymentId("payment-1");
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-
-        String paymentId = orderService.lockPendingOrderForExpiration(orderId);
-
-        assertThat(paymentId).isEqualTo("payment-1");
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
-        verify(orderRepository, never()).save(any());
-        verify(orderService, never()).restoreStock(any());
-    }
-
-    @Test
-    void lockPendingOrderForExpiration_pedidoInexistente_retornaNull() {
-        UUID orderId = UUID.randomUUID();
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
-
-        assertThat(orderService.lockPendingOrderForExpiration(orderId)).isNull();
-
-        verify(orderRepository, never()).save(any());
-        verify(orderService, never()).restoreStock(any());
-    }
-
-    @Test
-    void lockPendingOrderForExpiration_pedidoNaoPending_retornaNull() {
-        UUID orderId = UUID.randomUUID();
-        Order order = completeOrder(orderId, OrderStatus.PAID);
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-
-        assertThat(orderService.lockPendingOrderForExpiration(orderId)).isNull();
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
-        verify(orderRepository, never()).save(any());
-        verify(orderService, never()).restoreStock(any());
-    }
-
-    @Test
-    void finalizeExpiredOrderCancellation_estadoAindaCorresponde_cancelaEDevolveEstoque() {
-        UUID orderId = UUID.randomUUID();
-        Order order = completeOrder(orderId, OrderStatus.PENDING);
-        order.setPaymentId("payment-1");
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
-
-        boolean result = orderService.finalizeExpiredOrderCancellation(orderId, "payment-1");
+        boolean result = service.cancelExpiredOrderWithoutPayment(order.getId());
 
         assertThat(result).isTrue();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(variant(order).getStock()).isEqualTo(7);
         verify(orderRepository).save(order);
-        verify(orderService).restoreStock(order);
+        verify(service).restoreStock(order);
+        verify(productVariantRepository).save(variant(order));
     }
 
     @Test
-    void finalizeExpiredOrderCancellation_statusMudou_naoAlteraELogaAviso(CapturedOutput output) {
-        Order order = completeOrder(UUID.randomUUID(), OrderStatus.PAID);
-        order.setPaymentId("payment-1");
-        assertFinalizationRejected(order, "payment-1");
-        assertThat(output).contains("mudou de estado").contains("Requer investiga");
+    void cancelExpiredOrderWithoutPayment_statusMudou_retornaFalseELogaAviso(CapturedOutput output) {
+        assertCancelWithoutPaymentRejected(order(OrderStatus.PAID, null));
+        assertThat(output).contains("mudou de estado").contains("pagamento");
     }
 
     @Test
-    void finalizeExpiredOrderCancellation_paymentIdMudou_naoAlteraELogaAviso(CapturedOutput output) {
-        Order order = completeOrder(UUID.randomUUID(), OrderStatus.PENDING);
-        order.setPaymentId("payment-2");
-        assertFinalizationRejected(order, "payment-1");
-        assertThat(output).contains("mudou de estado").contains("Requer investiga");
+    void cancelExpiredOrderWithoutPayment_paymentIdFoiPreenchido_retornaFalseELogaAviso(CapturedOutput output) {
+        assertCancelWithoutPaymentRejected(order(OrderStatus.PENDING, "payment-1"));
+        assertThat(output).contains("mudou de estado").contains("pagamento");
     }
 
     @Test
-    void finalizeExpiredOrderCancellation_pedidoInexistente_naoAlteraELogaAviso(CapturedOutput output) {
-        UUID orderId = UUID.randomUUID();
-        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
-
-        assertThat(orderService.finalizeExpiredOrderCancellation(orderId, "payment-1")).isFalse();
-
+    void cancelExpiredOrderWithoutPayment_pedidoInexistente_retornaFalse(CapturedOutput output) {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(id)).thenReturn(Optional.empty());
+        assertThat(service.cancelExpiredOrderWithoutPayment(id)).isFalse();
         verify(orderRepository, never()).save(any());
-        verify(orderService, never()).restoreStock(any());
+        verify(service, never()).restoreStock(any());
+        assertThat(output).contains("mudou de estado");
+    }
+
+    @Test
+    void finalizeExpiredOrderCancellation_paymentIdNulo_adotaIdCancelaEDevolveEstoque() {
+        assertSuccessfulFinalization(null);
+    }
+
+    @Test
+    void finalizeExpiredOrderCancellation_paymentIdIgual_cancelaEDevolveEstoque() {
+        assertSuccessfulFinalization("payment-1");
+    }
+
+    @Test
+    void finalizeExpiredOrderCancellation_paymentIdDiferente_retornaFalseELogaAviso(CapturedOutput output) {
+        assertFinalizationRejected(order(OrderStatus.PENDING, "payment-2"));
         assertThat(output).contains("mudou de estado").contains("Requer investiga");
     }
 
-    private void assertFinalizationRejected(Order order, String expectedPaymentId) {
-        int stockBefore = order.getItems().get(0).getVariant().getStock();
+    @Test
+    void finalizeExpiredOrderCancellation_statusMudou_retornaFalseELogaAviso(CapturedOutput output) {
+        assertFinalizationRejected(order(OrderStatus.PAID, "payment-1"));
+        assertThat(output).contains("mudou de estado").contains("Requer investiga");
+    }
+
+    @Test
+    void finalizeExpiredOrderCancellation_pedidoInexistente_retornaFalse(CapturedOutput output) {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(id)).thenReturn(Optional.empty());
+        assertThat(service.finalizeExpiredOrderCancellation(id, "payment-1")).isFalse();
+        verify(orderRepository, never()).save(any());
+        verify(service, never()).restoreStock(any());
+        assertThat(output).contains("mudou de estado");
+    }
+
+    private void assertSuccessfulFinalization(String currentId) {
+        Order order = order(OrderStatus.PENDING, currentId);
         when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
-
-        boolean result = orderService.finalizeExpiredOrderCancellation(order.getId(), expectedPaymentId);
-
-        assertThat(result).isFalse();
-        assertThat(order.getItems().get(0).getVariant().getStock()).isEqualTo(stockBefore);
-        verify(orderRepository, never()).save(any());
-        verify(orderService, never()).restoreStock(any());
+        assertThat(service.finalizeExpiredOrderCancellation(order.getId(), "payment-1")).isTrue();
+        assertThat(order.getPaymentId()).isEqualTo("payment-1");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(variant(order).getStock()).isEqualTo(7);
+        verify(orderRepository).save(order);
+        verify(service).restoreStock(order);
     }
 
-    private Order completeOrder(UUID id, OrderStatus status) {
-        User user = new User();
-        user.setId(UUID.randomUUID());
+    private void assertCancelWithoutPaymentRejected(Order order) {
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        assertThat(service.cancelExpiredOrderWithoutPayment(order.getId())).isFalse();
+        assertThat(variant(order).getStock()).isEqualTo(5);
+        verify(orderRepository, never()).save(any());
+        verify(service, never()).restoreStock(any());
+    }
+
+    private void assertFinalizationRejected(Order order) {
+        OrderStatus status = order.getStatus();
+        String paymentId = order.getPaymentId();
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        assertThat(service.finalizeExpiredOrderCancellation(order.getId(), "payment-1")).isFalse();
+        assertUnchanged(order, status, paymentId);
+    }
+
+    private void assertUnchanged(Order order, OrderStatus status, String paymentId) {
+        assertThat(order.getStatus()).isEqualTo(status);
+        assertThat(order.getPaymentId()).isEqualTo(paymentId);
+        assertThat(variant(order).getStock()).isEqualTo(5);
+        verify(orderRepository, never()).save(any());
+        verify(service, never()).restoreStock(any());
+    }
+
+    private Order order(OrderStatus status, String paymentId) {
         Order order = new Order();
-        order.setId(id);
-        order.setUser(user);
+        order.setId(UUID.randomUUID());
         order.setTotal(new BigDecimal("100.00"));
         order.setStatus(status);
-        order.setCreatedAt(LocalDateTime.now());
-        ProductVariant variant = variant(5);
-        order.getItems().add(item(order, variant, 2));
-        return order;
-    }
-
-    private ProductVariant variant(int stock) {
-        Product product = new Product();
-        product.setName("Produto");
+        order.setPaymentId(paymentId);
         ProductVariant variant = new ProductVariant();
-        variant.setId(UUID.randomUUID());
-        variant.setProduct(product);
-        variant.setSize("M");
-        variant.setStock(stock);
-        return variant;
-    }
-
-    private OrderItem item(Order order, ProductVariant variant, int quantity) {
+        variant.setStock(5);
         OrderItem item = new OrderItem();
         item.setOrder(order);
         item.setVariant(variant);
-        item.setQuantity(quantity);
-        item.setUnitPrice(BigDecimal.TEN);
-        return item;
+        item.setQuantity(2);
+        order.getItems().add(item);
+        return order;
+    }
+
+    private ProductVariant variant(Order order) {
+        return order.getItems().get(0).getVariant();
     }
 }
