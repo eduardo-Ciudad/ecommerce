@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.infra.bling;
 
 import com.eduardo.ecomerce.infra.http.AppRestClientFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.jupiter.api.AfterEach;
@@ -26,7 +27,7 @@ class BlingClientTest {
         server = new MockWebServer();
         server.start();
         AppRestClientFactory factory = new AppRestClientFactory(500, 100);
-        client = new BlingClient(factory, server.url("/").toString());
+        client = new BlingClient(factory, server.url("/").toString(), new ObjectMapper());
     }
 
     @AfterEach
