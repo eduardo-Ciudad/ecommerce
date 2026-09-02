@@ -45,7 +45,7 @@ public class OrderExpirationScheduler {
         }
     }
 
-    private void processExpiredOrder(UUID orderId) {
+    void processExpiredOrder(UUID orderId) {
         String paymentId = orderService.lockPendingOrderForExpiration(orderId);
 
         if (paymentId == null) {
