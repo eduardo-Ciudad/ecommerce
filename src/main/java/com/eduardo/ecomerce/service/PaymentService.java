@@ -122,6 +122,8 @@ public class PaymentService {
         }
     }
 
+
+    @Transactional
     public void processWebhook(String paymentId) {
         try {
             Payment payment = paymentClient.get(Long.parseLong(paymentId));
@@ -132,14 +134,25 @@ public class PaymentService {
             Order order = orderRepository.findById(orderId)
                     .orElseThrow(() -> new EntityNotFoundException("Pedido não encontrado"));
 
-            // Idempotência: se esse pagamento já foi processado com o mesmo status, não faz nada de novo
             if (paymentId.equals(order.getPaymentId()) && status.equals(order.getPaymentStatus())) {
                 log.info("Webhook ignorado - Pedido: {}, Payment: {} já processado com status {}",
                         orderId, paymentId, status);
                 return;
             }
 
-            // Confere se o valor pago bate com o total do pedido antes de confirmar
+            boolean paymentIdMatches = order.getPaymentId() == null || paymentId.equals(order.getPaymentId());
+            if (!paymentIdMatches) {
+                log.warn("Webhook ignorado - Pedido: {} está associado ao payment {}, mas recebeu notificação do payment {} (status {})",
+                        orderId, order.getPaymentId(), paymentId, status);
+                return;
+            }
+
+            if (order.getStatus() != OrderStatus.PENDING) {
+                log.warn("Webhook recebido para pedido {} fora de PENDING (status atual: {}) - payment: {}, status recebido: {}. Nenhuma alteração aplicada.",
+                        orderId, order.getStatus(), paymentId, status);
+                return;
+            }
+
             BigDecimal paidAmount = payment.getTransactionAmount();
             if ("approved".equals(status) && paidAmount.compareTo(order.getTotal()) != 0) {
                 log.error("Valor divergente no webhook - Pedido: {}, esperado: {}, pago: {}",
