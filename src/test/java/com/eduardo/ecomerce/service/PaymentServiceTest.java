@@ -17,10 +17,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -31,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class PaymentServiceTest {
 
     @Mock
@@ -39,6 +43,9 @@ class PaymentServiceTest {
 
     @Mock
     private PaymentClient paymentClient;
+
+    @Mock
+    private OrderService orderService;
 
     @InjectMocks
     private PaymentService paymentService;
@@ -95,6 +102,7 @@ class PaymentServiceTest {
 
         assertThat(result.status()).isEqualTo("rejected");
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        verify(orderService).restoreStock(order);
     }
 
     @Test
@@ -174,7 +182,7 @@ class PaymentServiceTest {
         Payment mpPayment = mockPayment("111", "approved", "accredited", orderId);
 
         when(paymentClient.get(111L)).thenReturn(mpPayment);
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         paymentService.processWebhook("111");
 
@@ -189,7 +197,7 @@ class PaymentServiceTest {
         when(mpPayment.getTransactionAmount()).thenReturn(new BigDecimal("999.99"));
 
         when(paymentClient.get(222L)).thenReturn(mpPayment);
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.processWebhook("222"))
                 .isInstanceOf(BusinessException.class);
@@ -207,7 +215,7 @@ class PaymentServiceTest {
         Payment mpPayment = mockPayment("333", "approved", "accredited", orderId);
 
         when(paymentClient.get(333L)).thenReturn(mpPayment);
-        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         paymentService.processWebhook("333");
 
@@ -220,13 +228,173 @@ class PaymentServiceTest {
         Payment mpPayment = mockPayment("444", "approved", "accredited", orderId);
 
         when(paymentClient.get(444L)).thenReturn(mpPayment);
-        when(orderRepository.findById(orderId)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentService.processWebhook("444"))
                 .isInstanceOf(BusinessException.class);
     }
 
+    @Test
+    void processPayment_pagamentoAprovado_naoDevolveEstoque() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        Payment payment = mockPayment("501", "approved", "accredited", orderId);
+        when(paymentClient.create(any())).thenReturn(payment);
+
+        paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(orderRepository).findByIdForUpdate(orderId);
+        verify(orderRepository, never()).findById(orderId);
+        verify(orderService, never()).restoreStock(any());
+    }
+
+    @Test
+    void processWebhook_paymentIdEStatusJaRegistrados_ignora() throws Exception {
+        order.setPaymentId("601");
+        order.setPaymentStatus("approved");
+        order.setStatus(OrderStatus.PAID);
+        stubGetPayment("601", "approved", "accredited");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("601");
+
+        verify(orderRepository, never()).save(any());
+        verify(orderService, never()).restoreStock(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"approved", "rejected"})
+    void processWebhook_paymentIdDiferente_ignoraELogaAviso(String status, CapturedOutput output) throws Exception {
+        order.setPaymentId("original");
+        order.setPaymentStatus("pending");
+        stubGetPayment("602", status, "detail");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("602");
+
+        assertThat(order.getPaymentId()).isEqualTo("original");
+        assertThat(order.getPaymentStatus()).isEqualTo("pending");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        verify(orderRepository, never()).save(any());
+        verify(orderService, never()).restoreStock(any());
+        assertThat(output).contains("Webhook ignorado").contains("original").contains("602");
+    }
+
+    @Test
+    void processWebhook_pedidoForaDePending_ignoraELogaAviso(CapturedOutput output) throws Exception {
+        order.setPaymentId("603");
+        order.setPaymentStatus("approved");
+        order.setStatus(OrderStatus.PAID);
+        stubGetPayment("603", "rejected", "rejected");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("603");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(order.getPaymentStatus()).isEqualTo("approved");
+        verify(orderRepository, never()).save(any());
+        verify(orderService, never()).restoreStock(any());
+        assertThat(output).contains("fora de PENDING").contains("PAID");
+    }
+
+    @Test
+    void processWebhook_rejectedEmPedidoPending_cancelaEDevolveEstoque() throws Exception {
+        stubGetPayment("604", "rejected", "rejected");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("604");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getPaymentId()).isEqualTo("604");
+        assertThat(order.getPaymentStatus()).isEqualTo("rejected");
+        verify(orderService).restoreStock(order);
+        verify(orderRepository).save(order);
+    }
+
+    @Test
+    void processWebhook_approvedComValorDivergente_lancaSemAlterarPedido() throws Exception {
+        Payment payment = mockPayment("605", "approved", "accredited", orderId);
+        when(payment.getTransactionAmount()).thenReturn(new BigDecimal("149.99"));
+        when(paymentClient.get(605L)).thenReturn(payment);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> paymentService.processWebhook("605"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Erro ao processar");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getPaymentId()).isNull();
+        assertThat(order.getPaymentStatus()).isNull();
+        verify(orderRepository, never()).save(any());
+        verify(orderService, never()).restoreStock(any());
+    }
+
+    @Test
+    void processWebhook_paymentIdNulo_associaPrimeiroWebhookValido() throws Exception {
+        stubGetPayment("606", "pending", "pending");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("606");
+
+        assertThat(order.getPaymentId()).isEqualTo("606");
+        assertThat(order.getPaymentStatus()).isEqualTo("pending");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        verify(orderRepository).save(order);
+        verify(orderService, never()).restoreStock(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pending", "in_process", "authorized"})
+    void tryCancelPendingPayment_statusCancelavel_cancela(String status) throws Exception {
+        stubGetPayment("701", status, "detail");
+
+        PaymentService.PaymentCancellationOutcome result = paymentService.tryCancelPendingPayment("701");
+
+        assertThat(result).isEqualTo(PaymentService.PaymentCancellationOutcome.CANCELLED);
+        verify(paymentClient).cancel(701L);
+    }
+
+    @Test
+    void tryCancelPendingPayment_statusNaoCancelavel_naoChamaCancel() throws Exception {
+        stubGetPayment("702", "approved", "accredited");
+
+        PaymentService.PaymentCancellationOutcome result = paymentService.tryCancelPendingPayment("702");
+
+        assertThat(result).isEqualTo(PaymentService.PaymentCancellationOutcome.NOT_CANCELLABLE);
+        verify(paymentClient, never()).cancel(anyLong());
+    }
+
+    @Test
+    void tryCancelPendingPayment_falhaNoGet_retornaFailedELogaErro(CapturedOutput output) throws Exception {
+        when(paymentClient.get(703L)).thenThrow(new RuntimeException("get failed"));
+
+        PaymentService.PaymentCancellationOutcome result = paymentService.tryCancelPendingPayment("703");
+
+        assertThat(result).isEqualTo(PaymentService.PaymentCancellationOutcome.FAILED);
+        verify(paymentClient, never()).cancel(anyLong());
+        assertThat(output).contains("Falha ao tentar cancelar payment 703");
+    }
+
+    @Test
+    void tryCancelPendingPayment_falhaNoCancel_retornaFailedELogaErro(CapturedOutput output) throws Exception {
+        stubGetPayment("704", "pending", "pending");
+        when(paymentClient.cancel(704L)).thenThrow(new RuntimeException("cancel failed"));
+
+        PaymentService.PaymentCancellationOutcome result = paymentService.tryCancelPendingPayment("704");
+
+        assertThat(result).isEqualTo(PaymentService.PaymentCancellationOutcome.FAILED);
+        verify(paymentClient).cancel(704L);
+        assertThat(output).contains("Falha ao tentar cancelar payment 704");
+    }
+
     // ---------- helpers ----------
+
+    private Payment stubGetPayment(String id, String status, String statusDetail) throws Exception {
+        Payment payment = mockPayment(id, status, statusDetail, orderId);
+        when(paymentClient.get(Long.parseLong(id))).thenReturn(payment);
+        return payment;
+    }
 
     private Payment mockPayment(String id, String status, String statusDetail, UUID externalReference) {
         Payment payment = org.mockito.Mockito.mock(Payment.class);
