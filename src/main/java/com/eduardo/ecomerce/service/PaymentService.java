@@ -32,8 +32,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class PaymentService {
-
     private final OrderRepository orderRepository;
+    private final OrderService orderService;
     private final PaymentClient paymentClient;
 
     @Value("${mercadopago.notification-url}")
@@ -41,25 +41,13 @@ public class PaymentService {
 
     private static final Set<String> CANCELLABLE_PAYMENT_STATUSES = Set.of("pending", "in_process", "authorized");
 
-    public PaymentCancellationOutcome tryCancelPendingPayment(String paymentId) {
-        try {
-            Payment payment = paymentClient.get(Long.parseLong(paymentId));
-
-            if (!CANCELLABLE_PAYMENT_STATUSES.contains(payment.getStatus())) {
-                log.info("Payment {} não está em status cancelável para expiração (status atual: {})",
-                        paymentId, payment.getStatus());
-                return PaymentCancellationOutcome.NOT_CANCELLABLE;
-            }
-
-            paymentClient.cancel(Long.parseLong(paymentId));
-            log.info("Payment {} cancelado no Mercado Pago (expiração de pedido)", paymentId);
-            return PaymentCancellationOutcome.CANCELLED;
-
-        } catch (Exception e) {
-            log.error("Falha ao tentar cancelar payment {} no Mercado Pago (expiração de pedido)", paymentId, e);
-            return PaymentCancellationOutcome.FAILED;
-        }
+    public enum PaymentCancellationOutcome {
+        NOT_CANCELLABLE,
+        CANCELLED,
+        FAILED
     }
+
+
 
 
     @Transactional
@@ -107,7 +95,10 @@ public class PaymentService {
 
             switch (payment.getStatus()) {
                 case "approved" -> order.setStatus(OrderStatus.PAID);
-                case "rejected" -> order.setStatus(OrderStatus.CANCELLED);
+                case "rejected" -> {
+                    order.setStatus(OrderStatus.CANCELLED);
+                    orderService.restoreStock(order);
+                }
             }
 
             orderRepository.save(order);
@@ -146,6 +137,7 @@ public class PaymentService {
     }
 
 
+
     @Transactional
     public void processWebhook(String paymentId) {
         try {
@@ -154,7 +146,7 @@ public class PaymentService {
             String status = payment.getStatus();
             UUID orderId = UUID.fromString(payment.getExternalReference());
 
-            Order order = orderRepository.findById(orderId)
+            Order order = orderRepository.findByIdForUpdate(orderId)
                     .orElseThrow(() -> new EntityNotFoundException("Pedido não encontrado"));
 
             if (paymentId.equals(order.getPaymentId()) && status.equals(order.getPaymentStatus())) {
@@ -188,7 +180,10 @@ public class PaymentService {
 
             switch (status) {
                 case "approved" -> order.setStatus(OrderStatus.PAID);
-                case "rejected" -> order.setStatus(OrderStatus.CANCELLED);
+                case "rejected" -> {
+                    order.setStatus(OrderStatus.CANCELLED);
+                    orderService.restoreStock(order);
+                }
             }
 
             orderRepository.save(order);
@@ -201,11 +196,27 @@ public class PaymentService {
         }
     }
 
-    public enum PaymentCancellationOutcome {
-        NOT_CANCELLABLE,
-        CANCELLED,
-        FAILED
+    public PaymentCancellationOutcome tryCancelPendingPayment(String paymentId) {
+        try {
+            Payment payment = paymentClient.get(Long.parseLong(paymentId));
+
+            if (!CANCELLABLE_PAYMENT_STATUSES.contains(payment.getStatus())) {
+                log.info("Payment {} não está em status cancelável para expiração (status atual: {})",
+                        paymentId, payment.getStatus());
+                return PaymentCancellationOutcome.NOT_CANCELLABLE;
+            }
+
+            paymentClient.cancel(Long.parseLong(paymentId));
+            log.info("Payment {} cancelado no Mercado Pago (expiração de pedido)", paymentId);
+            return PaymentCancellationOutcome.CANCELLED;
+
+        } catch (Exception e) {
+            log.error("Falha ao tentar cancelar payment {} no Mercado Pago (expiração de pedido)", paymentId, e);
+            return PaymentCancellationOutcome.FAILED;
+        }
     }
+
+
 
 
 }

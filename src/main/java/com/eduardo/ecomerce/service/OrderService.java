@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -140,7 +141,7 @@ public class OrderService {
 
     @Transactional
     public OrderOutput updateStatus(UUID id, OrderStatus status) {
-        Order order = orderRepository.findById(id)
+        Order order = orderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado"));
 
         OrderStatus current = order.getStatus();
@@ -153,9 +154,16 @@ public class OrderService {
 
         order.setStatus(status);
         orderRepository.save(order);
+
+        if (status == OrderStatus.CANCELLED) {
+            restoreStock(order);
+        }
+
         log.info("Status do pedido atualizado — orderId: {}, status: {}", id, status);
         return toOutput(order);
     }
+
+
 
     public String lockPendingOrderForExpiration(UUID orderId) {
         return transactionTemplate.execute(status -> {
@@ -200,12 +208,14 @@ public class OrderService {
         }));
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
     public void restoreStock(Order order) {
         for (OrderItem item : order.getItems()) {
             ProductVariant variant = item.getVariant();
             variant.setStock(variant.getStock() + item.getQuantity());
             productVariantRepository.save(variant);
         }
+        log.info("Estoque devolvido — orderId: {}", order.getId());
     }
 
     private OrderOutput toOutput(Order order) {
