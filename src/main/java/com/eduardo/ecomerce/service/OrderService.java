@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -43,6 +44,7 @@ public class OrderService {
     private final ProductVariantRepository productVariantRepository;
     private final AddressRepository addressRepository;
     private final ShippingService shippingService;
+    private final TransactionTemplate transactionTemplate;
 
     @Transactional
     public OrderOutput create(UUID userId, CreateOrderInput input) {
@@ -153,6 +155,57 @@ public class OrderService {
         orderRepository.save(order);
         log.info("Status do pedido atualizado — orderId: {}, status: {}", id, status);
         return toOutput(order);
+    }
+
+    public String lockPendingOrderForExpiration(UUID orderId) {
+        return transactionTemplate.execute(status -> {
+            Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+
+            if (order == null || order.getStatus() != OrderStatus.PENDING) {
+                return null;
+            }
+
+            if (order.getPaymentId() == null) {
+                order.setStatus(OrderStatus.CANCELLED);
+                orderRepository.save(order);
+                restoreStock(order);
+                log.info("Pedido {} expirado sem pagamento associado — cancelado e estoque devolvido", orderId);
+                return null;
+            }
+
+            return order.getPaymentId();
+        });
+    }
+
+    public boolean finalizeExpiredOrderCancellation(UUID orderId, String expectedPaymentId) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+            Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+
+            boolean stillMatches = order != null
+                    && order.getStatus() == OrderStatus.PENDING
+                    && expectedPaymentId.equals(order.getPaymentId());
+
+            if (!stillMatches) {
+                log.warn("Pedido {} mudou de estado durante a expiração — payment {} foi cancelado no Mercado " +
+                        "Pago, mas o pedido não foi alterado localmente. Requer investigação.", orderId, expectedPaymentId);
+                return false;
+            }
+
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepository.save(order);
+            restoreStock(order);
+            log.info("Pedido {} cancelado por expiração — payment {} confirmado cancelado no Mercado Pago",
+                    orderId, expectedPaymentId);
+            return true;
+        }));
+    }
+
+    public void restoreStock(Order order) {
+        for (OrderItem item : order.getItems()) {
+            ProductVariant variant = item.getVariant();
+            variant.setStock(variant.getStock() + item.getQuantity());
+            productVariantRepository.save(variant);
+        }
     }
 
     private OrderOutput toOutput(Order order) {

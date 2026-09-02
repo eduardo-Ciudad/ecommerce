@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -37,6 +38,28 @@ public class PaymentService {
 
     @Value("${mercadopago.notification-url}")
     private String notificationUrl;
+
+    private static final Set<String> CANCELLABLE_PAYMENT_STATUSES = Set.of("pending", "in_process", "authorized");
+
+    public PaymentCancellationOutcome tryCancelPendingPayment(String paymentId) {
+        try {
+            Payment payment = paymentClient.get(Long.parseLong(paymentId));
+
+            if (!CANCELLABLE_PAYMENT_STATUSES.contains(payment.getStatus())) {
+                log.info("Payment {} não está em status cancelável para expiração (status atual: {})",
+                        paymentId, payment.getStatus());
+                return PaymentCancellationOutcome.NOT_CANCELLABLE;
+            }
+
+            paymentClient.cancel(Long.parseLong(paymentId));
+            log.info("Payment {} cancelado no Mercado Pago (expiração de pedido)", paymentId);
+            return PaymentCancellationOutcome.CANCELLED;
+
+        } catch (Exception e) {
+            log.error("Falha ao tentar cancelar payment {} no Mercado Pago (expiração de pedido)", paymentId, e);
+            return PaymentCancellationOutcome.FAILED;
+        }
+    }
 
 
     @Transactional
@@ -177,4 +200,12 @@ public class PaymentService {
             throw new BusinessException("Erro ao processar notificação de pagamento");
         }
     }
+
+    public enum PaymentCancellationOutcome {
+        NOT_CANCELLABLE,
+        CANCELLED,
+        FAILED
+    }
+
+
 }
