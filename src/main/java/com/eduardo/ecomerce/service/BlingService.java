@@ -49,17 +49,8 @@ public class BlingService {
     private final String authorizeUrl;
     private final String clientId;
 
-    // Transação programática, usada só na parte de persistência de cada
-    // upsert de produto/variante. @Transactional em método privado não
-    // funciona em chamada interna à própria classe (o proxy do Spring só
-    // intercepta chamadas vindas de fora do bean) — por isso TransactionTemplate
-    // aqui, mantendo as chamadas HTTP ao Bling fora do escopo da transação
-    // (decisão: não segurar conexão de banco aberta durante I/O de rede).
     private final TransactionTemplate transactionTemplate;
 
-    // States pendentes de confirmação no callback OAuth. Expiram em 10 minutos
-    // (tempo mais que suficiente para o usuário aprovar o app no Bling) e são
-    // de uso único — removidos assim que validados.
     private final Cache<String, Boolean> pendingStates = Caffeine.newBuilder()
             .expireAfterWrite(10, TimeUnit.MINUTES)
             .maximumSize(100)
@@ -212,18 +203,7 @@ public class BlingService {
         categoryRepository.save(category);
     }
 
-    /**
-     * Sincroniza produtos do Bling em duas fases:
-     * Fase A — pagina a listagem inteira (/produtos/list), sem chamadas de
-     * detalhe, e classifica cada item em produto pai, variação ou produto
-     * simples.
-     * Fase B — para cada variação e cada produto simples (produtos pai NÃO
-     * precisam de chamada de detalhe), busca o detalhe (/produtos/{id}) para
-     * obter categoria, estoque real e, no caso de variação, o tamanho.
-     * Cada unidade de trabalho (uma variação ou um produto simples) é
-     * persistida em sua própria transação curta, aberta só depois das
-     * chamadas HTTP terem retornado.
-     */
+
     public SyncProductsResult syncProducts() {
         return syncProducts(MAX_PAGES_SAFETY_LIMIT);
     }
@@ -434,13 +414,7 @@ public class BlingService {
         }));
     }
 
-    /**
-     * Resolve o Product pai de uma variação: cria se ainda não existir, ou
-     * retorna o existente se a categoria bater. Se a categoria divergir da
-     * já associada, loga ERROR e devolve null — sinal para o chamador não
-     * criar/atualizar a variante deste ciclo (decisão: não sobrescrever
-     * categoria silenciosamente, e não sincronizar a relação conflitante).
-     */
+
     private Product resolveParentProduct(Long blingProductId, Long blingVariationId, String nome, Category category, String imageUrl) {
         Optional<Product> existing = productRepository.findByBlingProductId(blingProductId);
 
@@ -476,12 +450,7 @@ public class BlingService {
         return product;
     }
 
-    /**
-     * Upsert de ProductVariant, reaproveitado tanto pelo caminho de variação
-     * quanto pelo de produto simples. Chave de busca: blingVariationId
-     * quando presente (variação); sku como fallback (produto simples, que
-     * não tem blingVariationId próprio distinto do id do produto).
-     */
+
     private void upsertVariant(Product product, Long blingVariationId, String sku, BigDecimal price, Integer stock, String size) {
         ProductVariant variant = (blingVariationId != null
                 ? productVariantRepository.findByBlingVariationId(blingVariationId)
