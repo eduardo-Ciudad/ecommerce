@@ -58,6 +58,10 @@ public class CategoryService {
             throw new BusinessException("Categoria possui produtos vinculados e não pode ser removida");
         }
 
+        if (categoryRepository.existsByParentId(id)) {
+            throw new BusinessException("Categoria possui subcategorias e não pode ser removida");
+        }
+
         categoryRepository.deleteById(id);
         log.info("Categoria removida — id: {}", id);
     }
@@ -84,6 +88,7 @@ public class CategoryService {
                 category.getId(),
                 category.getName(),
                 category.getImageUrl(),
+                category.getParent() != null ? category.getParent().getId() : null,
                 category.getCreatedAt()
         );
     }

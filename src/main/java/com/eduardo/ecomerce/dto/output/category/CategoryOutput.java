@@ -7,6 +7,7 @@ public record CategoryOutput(
         UUID id,
         String name,
         String imageUrl,
+        UUID parentId,
         LocalDateTime createdAt
 ) {
 }
