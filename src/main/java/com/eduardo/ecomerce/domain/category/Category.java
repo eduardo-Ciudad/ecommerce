@@ -29,6 +29,10 @@ public class Category {
     @Column(name = "bling_category_id", unique = true)
     private Long blingCategoryId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id")
+    private Category parent;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
