@@ -144,7 +144,7 @@ public class BlingService {
     public void syncCategories() {
         AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
         int page = 1;
-        int syncedCount = 0;
+        List<JsonNode> categoryNodes = new ArrayList<>();
 
         while (page <= MAX_PAGES_SAFETY_LIMIT) {
             int currentPage = page;
@@ -156,27 +156,40 @@ public class BlingService {
             }
 
             for (JsonNode categoryNode : data) {
-                upsertCategory(categoryNode);
-                syncedCount++;
+                categoryNodes.add(categoryNode);
             }
 
             page++;
         }
 
-        log.info("Sincronização de categorias do Bling concluída: {} categorias processadas", syncedCount);
+        Map<Long, Category> categoriesByBlingId = new HashMap<>();
+
+        // Primeira passada: garante que toda categoria exista localmente, sem depender do pai.
+        for (JsonNode categoryNode : categoryNodes) {
+            Category category = upsertCategory(categoryNode);
+            if (category != null) {
+                categoriesByBlingId.put(category.getBlingCategoryId(), category);
+            }
+        }
+
+        // Segunda passada: resolve o pai agora que todas já existem, independente da ordem de retorno do Bling.
+        for (JsonNode categoryNode : categoryNodes) {
+            resolveCategoryParent(categoryNode, categoriesByBlingId);
+        }
+
+        log.info("Sincronização de categorias do Bling concluída: {} categorias processadas", categoryNodes.size());
     }
 
-    private void upsertCategory(JsonNode categoryNode) {
-        Long blingCategoryId = categoryNode.get("id").asLong();
-        String descricao = categoryNode.get("descricao").asText();
+    private Category upsertCategory(JsonNode categoryNode) {
+        Long blingCategoryId = categoryNode.path("id").asLong();
+        String descricao = categoryNode.path("descricao").asText();
 
         Optional<Category> byBlingId = categoryRepository.findByBlingCategoryId(blingCategoryId);
 
         if (byBlingId.isPresent()) {
             Category category = byBlingId.get();
             category.setName(descricao);
-            categoryRepository.save(category);
-            return;
+            return categoryRepository.save(category);
         }
 
         Optional<Category> byName = categoryRepository.findByName(descricao);
@@ -189,17 +202,48 @@ public class BlingService {
                                 + "mas o Bling está enviando blingCategoryId={} para o mesmo nome — pulando",
                         descricao, category.getBlingCategoryId(), blingCategoryId
                 );
-                return;
+                return null;
             }
 
             category.setBlingCategoryId(blingCategoryId);
-            categoryRepository.save(category);
-            return;
+            return categoryRepository.save(category);
         }
 
         Category category = new Category();
         category.setBlingCategoryId(blingCategoryId);
         category.setName(descricao);
+        return categoryRepository.save(category);
+    }
+
+    private void resolveCategoryParent(JsonNode categoryNode, Map<Long, Category> categoriesByBlingId) {
+        long categoryBlingId = categoryNode.path("id").asLong();
+        Category category = categoriesByBlingId.get(categoryBlingId);
+
+        if (category == null) {
+            return;
+        }
+
+        JsonNode parentIdNode = categoryNode.path("categoriaPai").path("id");
+
+        if (parentIdNode.isMissingNode() || parentIdNode.isNull()) {
+            category.setParent(null);
+            categoryRepository.save(category);
+            return;
+        }
+
+        long parentBlingId = parentIdNode.asLong();
+        Category parent = categoriesByBlingId.get(parentBlingId);
+
+        if (parent == null) {
+            log.warn(
+                    "Categoria-pai do Bling não encontrada: categoria={}, pai={}",
+                    categoryBlingId, parentBlingId
+            );
+            category.setParent(null);
+        } else {
+            category.setParent(parent);
+        }
+
         categoryRepository.save(category);
     }
 
