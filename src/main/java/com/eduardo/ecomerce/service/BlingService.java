@@ -40,6 +40,7 @@ public class BlingService {
 
     private static final int CATEGORIES_PAGE_LIMIT = 100;
     private static final int MAX_PAGES_SAFETY_LIMIT = 500;
+    private static final int MAX_SIZE_LENGTH = 100;
 
     private final BlingTokenRepository blingTokenRepository;
     private final CategoryRepository categoryRepository;
@@ -496,9 +497,7 @@ public class BlingService {
 
 
     private void upsertVariant(Product product, Long blingVariationId, String sku, BigDecimal price, Integer stock, String size) {
-        ProductVariant variant = (blingVariationId != null
-                ? productVariantRepository.findByBlingVariationId(blingVariationId)
-                : productVariantRepository.findBySku(sku))
+        ProductVariant variant = findExistingVariant(blingVariationId, sku)
                 .orElseGet(ProductVariant::new);
 
         variant.setProduct(product);
@@ -509,6 +508,16 @@ public class BlingService {
         variant.setSize(size);
 
         productVariantRepository.save(variant);
+    }
+
+    private Optional<ProductVariant> findExistingVariant(Long blingVariationId, String sku) {
+        if (blingVariationId != null) {
+            Optional<ProductVariant> byVariationId = productVariantRepository.findByBlingVariationId(blingVariationId);
+            if (byVariationId.isPresent()) {
+                return byVariationId;
+            }
+        }
+        return productVariantRepository.findBySku(sku);
     }
 
     private Long extractCategoryId(JsonNode detail) {
@@ -531,7 +540,14 @@ public class BlingService {
 
         String raw = nome.asText(); // ex: "tamanho:10"
         int colonIndex = raw.indexOf(':');
-        return colonIndex >= 0 ? raw.substring(colonIndex + 1).trim() : raw;
+        String size = colonIndex >= 0 ? raw.substring(colonIndex + 1).trim() : raw;
+
+        if (size.length() > MAX_SIZE_LENGTH) {
+            log.warn("Valor de tamanho excede {} caracteres, truncando: \"{}\"", MAX_SIZE_LENGTH, size);
+            return size.substring(0, MAX_SIZE_LENGTH);
+        }
+
+        return size;
     }
 
     private BlingToken saveToken(JsonNode response) {

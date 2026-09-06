@@ -25,7 +25,7 @@ public class ProductVariant {
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
-    @Column( length = 5)
+    @Column(length = 100)
     private String size;
 
     @Column(nullable = false, precision = 10, scale = 2)
