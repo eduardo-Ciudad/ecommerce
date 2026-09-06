@@ -8,6 +8,7 @@ import java.util.UUID;
 public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
     boolean existsByName(String name);
+    boolean existsByParentId(UUID parentId);
     Optional<Category> findByBlingCategoryId(Long blingCategoryId);
     Optional<Category> findByName(String name);
 }
