@@ -62,4 +62,9 @@ public class BlingController {
          blingService.debugInspectBlingContract(sampleProductId);
          return ResponseEntity.ok("Diagnóstico executado, verifique os logs da aplicação.");
      }
+
+     @GetMapping("/bling/debug/product/{id}")
+     public void debugProduct(@PathVariable Long id) {
+         blingService.debugInspectBlingContract(id);
+     }
 }

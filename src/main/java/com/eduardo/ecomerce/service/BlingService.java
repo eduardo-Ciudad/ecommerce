@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -383,6 +384,7 @@ public class BlingService {
         Integer stock = extractStock(detail);
         String size = extractSize(detail);
         String imageUrl = extractImageUrl(detail);
+        String description = extractDescription(detail);
 
         if (blingCategoryId == null) {
             log.error("Variação do Bling sem categoria.id (blingVariationId={}), pulando", item.id());
@@ -409,7 +411,7 @@ public class BlingService {
                 return false;
             }
 
-            Product product = resolveParentProduct(item.idProdutoPai(), item.id(), parentNome, category, imageUrl);
+            Product product = resolveParentProduct(item.idProdutoPai(), item.id(), parentNome, category, imageUrl, description);
             if (product == null) {
                 return false; // conflito de categoria já logado dentro de resolveParentProduct
             }
@@ -427,6 +429,8 @@ public class BlingService {
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
         String imageUrl = extractImageUrl(detail);
+        String description = extractDescription(detail);
+
 
 
         if (blingCategoryId == null) {
@@ -452,6 +456,9 @@ public class BlingService {
             if (imageUrl != null) {
                 product.setImageUrl(imageUrl);
             }
+            if (description != null) {
+                product.setDescription(description);
+            }
             product = productRepository.save(product);
 
             upsertVariant(product, null, item.sku(), item.price(), stock, null);
@@ -460,7 +467,7 @@ public class BlingService {
     }
 
 
-    private Product resolveParentProduct(Long blingProductId, Long blingVariationId, String nome, Category category, String imageUrl) {
+    private Product resolveParentProduct(Long blingProductId, Long blingVariationId, String nome, Category category, String imageUrl, String description) {
         Optional<Product> existing = productRepository.findByBlingProductId(blingProductId);
 
         if (existing.isEmpty()) {
@@ -470,6 +477,9 @@ public class BlingService {
             product.setCategory(category);
             if (imageUrl != null) {
                 product.setImageUrl(imageUrl);
+            }
+            if (description != null) {              // NOVO
+                product.setDescription(description);
             }
             return productRepository.save(product);
         }
@@ -490,6 +500,10 @@ public class BlingService {
 
         if (imageUrl != null) {
             product.setImageUrl(imageUrl);
+        }
+
+        if (description != null) {
+            product.setDescription(description);
         }
 
         return product;
@@ -603,6 +617,19 @@ public class BlingService {
 
         JsonNode link = internas.get(0).path("link");
         return link.isMissingNode() || link.isNull() ? null : link.asText();
+    }
+
+    private String extractDescription(JsonNode detail) {
+        JsonNode data = detail.path("data");
+        String curta = data.path("descricaoCurta").asText("");
+        String fonte = !curta.isBlank() ? curta : data.path("descricaoComplementar").asText("");
+
+        if (fonte.isBlank()) {
+            return null;
+        }
+
+        String texto = Jsoup.parse(fonte).text().replace('\u00a0', ' ').trim();
+        return texto.isBlank() ? null : texto;
     }
 
 }
