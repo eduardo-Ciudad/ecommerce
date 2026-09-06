@@ -183,6 +183,8 @@ public class PaymentService {
         try {
             MPSearchRequest searchRequest = MPSearchRequest.builder()
                     .filters(Map.of("external_reference", orderId.toString()))
+                    .limit(10)
+                    .offset(0)
                     .build();
 
             List<Payment> results = paymentClient.search(searchRequest).getResults();
