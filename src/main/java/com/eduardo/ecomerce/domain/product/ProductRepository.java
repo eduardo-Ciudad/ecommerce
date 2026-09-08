@@ -26,5 +26,10 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("UPDATE Product p SET p.active = false WHERE p.blingProductId IS NOT NULL AND p.active = true AND p.blingProductId NOT IN :seenIds")
     int deactivateMissingFromBling(@Param("seenIds") Collection<Long> seenIds);
 
+    Page<Product> findByActiveTrueAndCategoryIdIn(Collection<UUID> categoryIds, Pageable pageable);
+
+    @Query("SELECT p FROM Product p WHERE p.active = true AND p.category.id IN :categoryIds AND p.imageUrl IS NOT NULL AND p.imageUrl <> ''")
+    Page<Product> findByActiveTrueAndCategoryIdInAndImageUrlIsNotNull(@Param("categoryIds") Collection<UUID> categoryIds, Pageable pageable);
+
 
 }

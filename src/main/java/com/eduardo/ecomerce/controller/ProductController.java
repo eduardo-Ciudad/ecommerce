@@ -48,8 +48,9 @@ public class ProductController {
     })
     public ResponseEntity<PageResponse<ProductOutput>> findAll(
             @PageableDefault(size = 20) Pageable pageable,
-            @RequestParam(name = "includeWithoutImage", defaultValue = "false") boolean includeWithoutImage) {
-        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage));
+            @RequestParam(name = "includeWithoutImage", defaultValue = "false") boolean includeWithoutImage,
+            @RequestParam(required = false) UUID categoryId) {
+        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage, categoryId));
     }
 
     @GetMapping("/{id}")

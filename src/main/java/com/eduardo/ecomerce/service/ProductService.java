@@ -18,7 +18,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -44,11 +46,26 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage) {
+    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, UUID categoryId) {
+        if (categoryId == null) {
+            Page<Product> page = includeWithoutImage
+                    ? productRepository.findByActiveTrue(pageable)
+                    : productRepository.findByActiveTrueAndImageUrlIsNotNull(pageable);
+            return PageResponse.from(page.map(this::toOutput));
+        }
+
+        Set<UUID> categoryIds = resolveCategoryIdWithChildren(categoryId);
         Page<Product> page = includeWithoutImage
-                ? productRepository.findByActiveTrue(pageable)
-                : productRepository.findByActiveTrueAndImageUrlIsNotNull(pageable);
+                ? productRepository.findByActiveTrueAndCategoryIdIn(categoryIds, pageable)
+                : productRepository.findByActiveTrueAndCategoryIdInAndImageUrlIsNotNull(categoryIds, pageable);
         return PageResponse.from(page.map(this::toOutput));
+    }
+
+    private Set<UUID> resolveCategoryIdWithChildren(UUID categoryId) {
+        Set<UUID> ids = new HashSet<>();
+        ids.add(categoryId);
+        categoryRepository.findByParentId(categoryId).forEach(child -> ids.add(child.getId()));
+        return ids;
     }
 
     @Transactional(readOnly = true)
