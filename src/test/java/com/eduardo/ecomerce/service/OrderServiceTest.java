@@ -16,6 +16,7 @@ import com.eduardo.ecomerce.domain.user.User;
 import com.eduardo.ecomerce.domain.user.UserRepository;
 import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
+import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -59,6 +63,9 @@ class OrderServiceTest {
 
     @Mock
     private ShippingService shippingService;
+
+    @Mock
+    private TransactionTemplate transactionTemplate;
 
     @InjectMocks
     private OrderService orderService;
@@ -312,5 +319,35 @@ class OrderServiceTest {
         assertThrows(BusinessException.class, () -> orderService.create(userId, orderInput));
 
         verify(addressRepository, org.mockito.Mockito.never()).findByIdAndUserId(any(), any());
+    }
+
+    @Test
+    void findAllReturnsOrdersFromAllUsers() {
+        User firstUser = new User();
+        firstUser.setId(UUID.randomUUID());
+        User secondUser = new User();
+        secondUser.setId(UUID.randomUUID());
+
+        Order firstOrder = orderFor(firstUser);
+        Order secondOrder = orderFor(secondUser);
+        PageRequest pageable = PageRequest.of(0, 20);
+        when(orderRepository.findAll(pageable))
+                .thenReturn(new PageImpl<>(List.of(firstOrder, secondOrder), pageable, 2));
+
+        PageResponse<OrderOutput> result = orderService.findAll(pageable);
+
+        assertThat(result.content()).extracting(OrderOutput::userId)
+                .containsExactly(firstUser.getId(), secondUser.getId());
+        verify(orderRepository).findAll(pageable);
+    }
+
+    private Order orderFor(User user) {
+        Order order = new Order();
+        order.setId(UUID.randomUUID());
+        order.setUser(user);
+        order.setTotal(BigDecimal.TEN);
+        order.setStatus(OrderStatus.PENDING);
+        order.setCreatedAt(LocalDateTime.now());
+        return order;
     }
 }
