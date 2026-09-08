@@ -49,9 +49,9 @@ public class BlingController {
 
      @PostMapping("/sync/products")
      public ResponseEntity<SyncProductsResult> syncProducts(
-             @RequestParam(defaultValue = "1") int maxPages
+             @RequestParam(required = false) Integer maxPages
      ) {
-         SyncProductsResult result = blingService.syncProducts(maxPages);
+         SyncProductsResult result = maxPages != null ? blingService.syncProducts(maxPages) : blingService.syncProducts();
          return ResponseEntity.ok(result);
      }
 
