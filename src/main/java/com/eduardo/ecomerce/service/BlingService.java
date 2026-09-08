@@ -632,7 +632,12 @@ public class BlingService {
         }
 
         JsonNode link = internas.get(0).path("link");
-        return link.isMissingNode() || link.isNull() ? null : link.asText();
+        if (link.isMissingNode() || link.isNull()) {
+            return null;
+        }
+
+        String url = link.asText();
+        return url.isBlank() ? null : url;
     }
 
     private String extractDescription(JsonNode detail) {
