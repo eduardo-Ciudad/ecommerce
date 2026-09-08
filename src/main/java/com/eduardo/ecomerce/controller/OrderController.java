@@ -75,4 +75,9 @@ public class OrderController {
     public ResponseEntity<OrderOutput> updateStatus(@PathVariable UUID id, @RequestBody OrderStatus status) {
         return ResponseEntity.ok(orderService.updateStatus(id, status));
     }
+    @GetMapping("/admin")
+    public ResponseEntity<PageResponse<OrderOutput>> findAllAdmin (
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(orderService.findAll(pageable))
+    }
 }

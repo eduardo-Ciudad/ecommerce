@@ -95,6 +95,7 @@ public class SecurityConfig {
 
                         // Administração de pedidos
                         .requestMatchers(HttpMethod.PUT, "/orders/*/status").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/orders/admin").hasRole("ADMIN")
 
                         // Administração do Bling
                         .requestMatchers("/bling/sync/**").hasRole("ADMIN")

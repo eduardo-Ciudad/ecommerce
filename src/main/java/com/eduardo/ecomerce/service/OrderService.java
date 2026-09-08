@@ -131,6 +131,10 @@ public class OrderService {
         return PageResponse.from(orderRepository.findByUserId(userId, pageable).map(this::toOutput));
     }
 
+    public PageResponse<OrderOutput> findAll(Pageable pageable) {
+        return PageResponse.from(orderRepository.findAll(pageable).map(this::toOutput));
+    }
+
     @Transactional(readOnly = true)
     public OrderOutput findByUserIdAndOrderId(UUID userId, UUID orderId) {
         Order order = orderRepository.findByIdAndUserId(orderId, userId)
