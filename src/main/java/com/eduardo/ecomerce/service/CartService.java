@@ -133,6 +133,7 @@ public class CartService {
                         item.getId(),
                         item.getVariant().getId(),
                         item.getVariant().getProduct().getName(),
+                        item.getVariant().getProduct().getImageUrl(),
                         item.getVariant().getSize(),
                         item.getVariant().getPrice(),
                         item.getQuantity()

@@ -7,6 +7,7 @@ public record CartItemOutput(
         UUID id,
         UUID variantId,
         String productName,
+        String imageUrl,
         String size,
         BigDecimal price,
         Integer quantity
