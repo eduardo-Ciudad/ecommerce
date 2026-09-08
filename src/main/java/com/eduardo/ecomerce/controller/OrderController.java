@@ -78,6 +78,6 @@ public class OrderController {
     @GetMapping("/admin")
     public ResponseEntity<PageResponse<OrderOutput>> findAllAdmin (
             @PageableDefault(size = 20) Pageable pageable) {
-        return ResponseEntity.ok(orderService.findAll(pageable))
+        return ResponseEntity.ok(orderService.findAll(pageable));
     }
 }

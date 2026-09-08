@@ -23,16 +23,12 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
+
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -294,6 +290,8 @@ public class BlingService {
             }
         }
 
+        int deactivated = reconcileRemovedProducts(classified);
+
         SyncProductsResult result = new SyncProductsResult(
                 classified.parentNames().size(),
                 variantsSynced,
@@ -302,7 +300,9 @@ public class BlingService {
                 standaloneSkipped
         );
 
-        log.info(
+
+
+                log.info(
                 "Sincronização de produtos do Bling concluída: {} produtos pai identificados, "
                         + "{} variações sincronizadas, {} variações puladas (conflito/erro), "
                         + "{} produtos simples sincronizados, {} produtos simples pulados (erro)",
@@ -311,6 +311,22 @@ public class BlingService {
         );
 
         return result;
+    }
+
+    private int reconcileRemovedProducts(ClassifiedListItems classified) {
+        Set<Long> seenBlingProductIds = new HashSet<>(classified.parentNames().keySet());
+        classified.standaloneItems().forEach(item -> seenBlingProductIds.add(item.id()));
+
+        if (seenBlingProductIds.isEmpty()) {
+            log.warn("Reconciliação de produtos removidos abortada: sync não retornou nenhum produto (possível falha na listagem do Bling) — evitando desativar o catálogo inteiro por segurança");
+            return 0;
+        }
+
+        int deactivated = productRepository.deactivateMissingFromBling(seenBlingProductIds);
+        if (deactivated > 0) {
+            log.info("{} produto(s) desativado(s) por não aparecerem mais na listagem do Bling", deactivated);
+        }
+        return deactivated;
     }
 
     private List<ProductListItem> fetchAllProductListItems(AtomicReference<String> tokenRef, int maxPages) {
