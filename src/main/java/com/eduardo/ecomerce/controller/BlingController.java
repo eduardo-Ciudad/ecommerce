@@ -25,21 +25,15 @@ public class BlingController {
         return ResponseEntity.ok(new AuthorizationUrlOutput(authorizationUrl));
     }
 
-    @GetMapping("/callback")
-    public ResponseEntity<String> callback(
-            @RequestParam String code,
-            @RequestParam(required = false) String state
-    ) {
-        if (state != null) {
-            blingService.validateState(state);
-        } else {
-            log.warn("Callback OAuth do Bling recebido sem state");
-        }
-
-        blingService.handleAuthorizationCode(code);
-
-        return ResponseEntity.ok("Integração com o Bling autorizada com sucesso.");
-    }
+     @GetMapping("/callback")
+     public ResponseEntity<String> callback(
+             @RequestParam String code,
+             @RequestParam String state
+     ) {
+         blingService.validateState(state);
+         blingService.handleAuthorizationCode(code);
+         return ResponseEntity.ok("Integração com o Bling autorizada com sucesso.");
+     }
 
     @PostMapping("/sync/categories")
     public ResponseEntity<String> syncCategories() {

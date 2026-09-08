@@ -118,7 +118,7 @@ public class BlingService {
         return token.getAccessToken();
     }
 
-    private String forceRefreshAccessToken() {
+    private synchronized String forceRefreshAccessToken() {
         BlingToken token = blingTokenRepository.findFirstByOrderByUpdatedAtDesc()
                 .orElseThrow(() -> new BlingIntegrationException(
                         "Nenhum token do Bling encontrado — autorização ainda não foi realizada", null));
@@ -138,7 +138,7 @@ public class BlingService {
         }
     }
 
-    @Transactional
+
     public void syncCategories() {
         AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
         int page = 1;
@@ -161,19 +161,18 @@ public class BlingService {
         }
 
         Map<Long, Category> categoriesByBlingId = new HashMap<>();
-
-        // Primeira passada: garante que toda categoria exista localmente, sem depender do pai.
-        for (JsonNode categoryNode : categoryNodes) {
-            Category category = upsertCategory(categoryNode);
-            if (category != null) {
-                categoriesByBlingId.put(category.getBlingCategoryId(), category);
+        transactionTemplate.execute(status -> {
+            for (JsonNode categoryNode : categoryNodes) {
+                Category category = upsertCategory(categoryNode);
+                if (category != null) categoriesByBlingId.put(category.getBlingCategoryId(), category);
             }
-        }
+            for (JsonNode categoryNode : categoryNodes) {
+                resolveCategoryParent(categoryNode, categoriesByBlingId);
+            }
+            return null;
+        });
 
-        // Segunda passada: resolve o pai agora que todas já existem, independente da ordem de retorno do Bling.
-        for (JsonNode categoryNode : categoryNodes) {
-            resolveCategoryParent(categoryNode, categoriesByBlingId);
-        }
+
 
         log.info("Sincronização de categorias do Bling concluída: {} categorias processadas", categoryNodes.size());
     }

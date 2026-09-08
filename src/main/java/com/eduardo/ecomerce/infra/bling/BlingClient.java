@@ -55,7 +55,7 @@ public class BlingClient {
 
 
 
-    private void throttle() {
+    private synchronized void throttle() {
         long now = System.currentTimeMillis();
         long last = lastRequestTimestamp.get();
         long elapsed = now - last;
