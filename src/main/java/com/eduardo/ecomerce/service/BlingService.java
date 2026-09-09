@@ -6,6 +6,11 @@ import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
+import com.eduardo.ecomerce.domain.productimage.ImageSource;
+import com.eduardo.ecomerce.domain.productimage.ProductImage;
+import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
+import com.eduardo.ecomerce.domain.productspecification.ProductSpecification;
+import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.dto.output.bling.SyncProductsResult;
@@ -23,6 +28,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import java.util.Locale;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -38,7 +47,11 @@ public class BlingService {
     private static final int CATEGORIES_PAGE_LIMIT = 100;
     private static final int MAX_PAGES_SAFETY_LIMIT = 500;
     private static final int MAX_SIZE_LENGTH = 100;
+    private static final int MAX_SPECIFICATION_NAME_LENGTH = 150;
+    private static final int MAX_SPECIFICATION_VALUE_LENGTH = 500;
 
+    private final ProductImageRepository productImageRepository;
+    private final ProductSpecificationRepository productSpecificationRepository;
     private final BlingTokenRepository blingTokenRepository;
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
@@ -54,11 +67,15 @@ public class BlingService {
             .maximumSize(100)
             .build();
 
+
+
     public BlingService(
             BlingTokenRepository blingTokenRepository,
             CategoryRepository categoryRepository,
             ProductRepository productRepository,
             ProductVariantRepository productVariantRepository,
+            ProductImageRepository productImageRepository,
+            ProductSpecificationRepository productSpecificationRepository,
             BlingClient blingClient,
             PlatformTransactionManager transactionManager,
             @Value("${bling.authorize-url}") String authorizeUrl,
@@ -68,12 +85,13 @@ public class BlingService {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
         this.productVariantRepository = productVariantRepository;
+        this.productImageRepository = productImageRepository;
+        this.productSpecificationRepository = productSpecificationRepository;
         this.blingClient = blingClient;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.authorizeUrl = authorizeUrl;
         this.clientId = clientId;
     }
-
 
 
     public String buildAuthorizationUrl() {
@@ -256,12 +274,14 @@ public class BlingService {
         List<ProductListItem> allItems = fetchAllProductListItems(tokenRef, maxPages);
         ClassifiedListItems classified = classifyListItems(allItems);
 
+        Set<Long> parentIdsWithMediaSynced = new HashSet<>();
+
         int variantsSynced = 0;
         int variantsSkipped = 0;
 
         for (ProductListItem item : classified.variantItems()) {
             try {
-                boolean synced = upsertProductFromVariation(tokenRef, item, classified.parentNames());
+                boolean synced = upsertProductFromVariation(tokenRef, item, classified.parentNames(), parentIdsWithMediaSynced);
                 if (synced) {
                     variantsSynced++;
                 } else {
@@ -392,13 +412,17 @@ public class BlingService {
      * conflito de categoria com o produto pai já existente).
      */
 
-    private boolean upsertProductFromVariation(AtomicReference<String> tokenRef, ProductListItem item, Map<Long, String> parentNames) {
+    private boolean upsertProductFromVariation(
+            AtomicReference<String> tokenRef,
+            ProductListItem item,
+            Map<Long, String> parentNames,
+            Set<Long> parentIdsWithMediaSynced
+    ) {
         JsonNode detail = callWithRetry(tokenRef, token -> blingClient.getProductById(token, item.id()));
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
         String size = extractSize(detail);
-        String imageUrl = extractImageUrl(detail);
         String description = extractDescription(detail);
 
         if (blingCategoryId == null) {
@@ -426,16 +450,18 @@ public class BlingService {
                 return false;
             }
 
-            Product product = resolveParentProduct(item.idProdutoPai(), item.id(), parentNome, category, imageUrl, description);
+            Product product = resolveParentProduct(item.idProdutoPai(), item.id(), parentNome, category, description);
             if (product == null) {
-                return false; // conflito de categoria já logado dentro de resolveParentProduct
+                return false;
+            }
+
+            if (parentIdsWithMediaSynced.add(item.idProdutoPai())) {
+                syncProductMedia(product, detail);
             }
 
             upsertVariant(product, item.id(), item.sku(), item.price(), stock, size);
             return true;
         }));
-
-
     }
 
     private boolean upsertProductSimples(AtomicReference<String> tokenRef, ProductListItem item) {
@@ -443,10 +469,7 @@ public class BlingService {
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
-        String imageUrl = extractImageUrl(detail);
         String description = extractDescription(detail);
-
-
 
         if (blingCategoryId == null) {
             log.error("Produto simples do Bling sem categoria.id (blingProductId={}), pulando", item.id());
@@ -468,21 +491,50 @@ public class BlingService {
             product.setBlingProductId(item.id());
             product.setName(item.nome());
             product.setCategory(category);
-            if (imageUrl != null) {
-                product.setImageUrl(imageUrl);
-            }
             if (description != null) {
                 product.setDescription(description);
             }
             product = productRepository.save(product);
+
+            syncProductMedia(product, detail);
 
             upsertVariant(product, null, item.sku(), item.price(), stock, null);
             return true;
         }));
     }
 
+    private void syncProductMedia(Product product, JsonNode detail) {
+        List<ExtractedImage> images = extractImages(detail);
+        productImageRepository.deleteByProductIdAndSource(product.getId(), ImageSource.BLING);
 
-    private Product resolveParentProduct(Long blingProductId, Long blingVariationId, String nome, Category category, String imageUrl, String description) {
+        for (ExtractedImage image : images) {
+            ProductImage productImage = new ProductImage();
+            productImage.setProduct(product);
+            productImage.setUrl(image.url());
+            productImage.setThumbnailUrl(image.thumbnailUrl());
+            productImage.setSource(ImageSource.BLING);
+            productImage.setDisplayOrder(image.displayOrder());
+            productImageRepository.save(productImage);
+        }
+
+        List<ExtractedSpecification> specifications = extractSpecifications(detail);
+        productSpecificationRepository.deleteByProductId(product.getId());
+
+        for (ExtractedSpecification specification : specifications) {
+            ProductSpecification productSpecification = new ProductSpecification();
+            productSpecification.setProduct(product);
+            productSpecification.setName(specification.name());
+            productSpecification.setValue(specification.value());
+            productSpecification.setDisplayOrder(specification.displayOrder());
+            productSpecificationRepository.save(productSpecification);
+        }
+
+        String coverImageUrl = images.isEmpty() ? null : images.get(0).url();
+        product.setImageUrl(coverImageUrl);
+    }
+
+
+    private Product resolveParentProduct(Long blingProductId, Long blingVariationId, String nome, Category category, String description) {
         Optional<Product> existing = productRepository.findByBlingProductId(blingProductId);
 
         if (existing.isEmpty()) {
@@ -490,10 +542,7 @@ public class BlingService {
             product.setBlingProductId(blingProductId);
             product.setName(nome);
             product.setCategory(category);
-            if (imageUrl != null) {
-                product.setImageUrl(imageUrl);
-            }
-            if (description != null) {              // NOVO
+            if (description != null) {
                 product.setDescription(description);
             }
             return productRepository.save(product);
@@ -511,10 +560,6 @@ public class BlingService {
                     blingProductId, blingVariationId, currentCategoryId, category.getBlingCategoryId()
             );
             product.setCategory(category);
-        }
-
-        if (imageUrl != null) {
-            product.setImageUrl(imageUrl);
         }
 
         if (description != null) {
@@ -611,6 +656,12 @@ public class BlingService {
     ) {
     }
 
+    private record ExtractedImage(String url, String thumbnailUrl, int displayOrder) {
+    }
+
+    private record ExtractedSpecification(String name, String value, int displayOrder) {
+    }
+
 
     public void debugInspectBlingContract(Long sampleProductId) {
         String accessToken = getValidAccessToken();
@@ -624,20 +675,6 @@ public class BlingService {
         }
     }
 
-    private String extractImageUrl(JsonNode detail) {
-        JsonNode internas = detail.path("data").path("midia").path("imagens").path("internas");
-        if (!internas.isArray() || internas.isEmpty()) {
-            return null;
-        }
-
-        JsonNode link = internas.get(0).path("link");
-        if (link.isMissingNode() || link.isNull()) {
-            return null;
-        }
-
-        String url = link.asText();
-        return url.isBlank() ? null : url;
-    }
 
     private String extractDescription(JsonNode detail) {
         JsonNode data = detail.path("data");
@@ -650,6 +687,113 @@ public class BlingService {
 
         String texto = Jsoup.parse(fonte).text().replace('\u00a0', ' ').trim();
         return texto.isBlank() ? null : texto;
+    }
+
+    private List<ExtractedImage> extractImages(JsonNode detail) {
+        JsonNode internas = detail.path("data").path("midia").path("imagens").path("internas");
+        if (!internas.isArray() || internas.isEmpty()) {
+            return List.of();
+        }
+
+        List<ExtractedImage> images = new ArrayList<>();
+        int order = 0;
+
+        for (JsonNode imageNode : internas) {
+            JsonNode linkNode = imageNode.path("link");
+            if (linkNode.isMissingNode() || linkNode.isNull()) {
+                continue;
+            }
+
+            String url = linkNode.asText();
+            if (url.isBlank()) {
+                continue;
+            }
+
+            JsonNode thumbnailNode = imageNode.path("linkMiniatura");
+            String thumbnailUrl = thumbnailNode.isMissingNode()
+                    || thumbnailNode.isNull()
+                    || thumbnailNode.asText().isBlank()
+                    ? null
+                    : thumbnailNode.asText();
+
+            images.add(new ExtractedImage(url, thumbnailUrl, order++));
+        }
+
+        return images;
+    }
+
+    private List<ExtractedSpecification> extractSpecifications(JsonNode detail) {
+        String html = detail.path("data").path("descricaoComplementar").asText("");
+        if (html.isBlank()) {
+            return List.of();
+        }
+
+        Document doc = Jsoup.parse(html);
+        Elements allElements = doc.getAllElements();
+
+        Element marker = null;
+        for (Element element : allElements) {
+            String ownText = element.ownText();
+            if (!ownText.isBlank() && ownText.toLowerCase(Locale.ROOT).contains("especifica")) {
+                marker = element;
+                break;
+            }
+        }
+
+        if (marker == null) {
+            return List.of();
+        }
+
+        Element specList = null;
+        boolean pastMarker = false;
+        for (Element element : allElements) {
+            if (element == marker) {
+                pastMarker = true;
+                continue;
+            }
+            if (pastMarker && "ul".equalsIgnoreCase(element.tagName())) {
+                specList = element;
+                break;
+            }
+        }
+
+        if (specList == null) {
+            return List.of();
+        }
+
+        List<ExtractedSpecification> specifications = new ArrayList<>();
+        int order = 0;
+
+        for (Element item : specList.children()) {
+            if (!"li".equalsIgnoreCase(item.tagName())) {
+                continue;
+            }
+
+            Element strong = item.selectFirst("strong");
+            if (strong == null) {
+                continue;
+            }
+
+            String name = strong.text().replaceAll(":\\s*$", "").trim();
+            String itemText = item.text();
+            String strongText = strong.text();
+            String value = itemText.length() > strongText.length()
+                    ? itemText.substring(strongText.length()).trim()
+                    : "";
+
+            if (name.isBlank() || value.isBlank()) {
+                continue;
+            }
+
+            if (name.length() > MAX_SPECIFICATION_NAME_LENGTH || value.length() > MAX_SPECIFICATION_VALUE_LENGTH) {
+                log.warn("Especificação ignorada por exceder tamanho máximo (nome=\"{}\")", name);
+                continue;
+            }
+
+            specifications.add(new ExtractedSpecification(name, value, order++));
+        }
+
+        return specifications;
     }
 
 }
