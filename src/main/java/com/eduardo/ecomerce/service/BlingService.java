@@ -264,11 +264,15 @@ public class BlingService {
 
 
     public SyncProductsResult syncProducts() {
-        return syncProducts(MAX_PAGES_SAFETY_LIMIT);
+        return syncProducts(MAX_PAGES_SAFETY_LIMIT, true);
+    }
+
+    public SyncProductsResult syncProducts(int maxPages) {
+        return syncProducts(maxPages, maxPages >= MAX_PAGES_SAFETY_LIMIT);
     }
 
 
-    public SyncProductsResult syncProducts(int maxPages) {
+    private SyncProductsResult syncProducts(int maxPages, boolean reconcile) {
         AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
 
         List<ProductListItem> allItems = fetchAllProductListItems(tokenRef, maxPages);
@@ -309,7 +313,7 @@ public class BlingService {
             }
         }
 
-        int deactivated = reconcileRemovedProducts(classified);
+        int deactivated = reconcile ? reconcileRemovedProducts(classified) : 0;
 
         SyncProductsResult result = new SyncProductsResult(
                 classified.parentNames().size(),
@@ -319,12 +323,8 @@ public class BlingService {
                 standaloneSkipped
         );
 
-
-
-                log.info(
-                "Sincronização de produtos do Bling concluída: {} produtos pai identificados, "
-                        + "{} variações sincronizadas, {} variações puladas (conflito/erro), "
-                        + "{} produtos simples sincronizados, {} produtos simples pulados (erro)",
+        log.info(
+                "Sincronização de produtos do Bling concluída: ...",
                 result.parentProductsFound(), result.variantsSynced(), result.variantsSkipped(),
                 result.standaloneSynced(), result.standaloneSkipped()
         );
@@ -491,6 +491,7 @@ public class BlingService {
             product.setBlingProductId(item.id());
             product.setName(item.nome());
             product.setCategory(category);
+            product.setActive(true);
             if (description != null) {
                 product.setDescription(description);
             }
@@ -549,6 +550,8 @@ public class BlingService {
         }
 
         Product product = existing.get();
+        product.setActive(true);
+
         Long currentCategoryId = product.getCategory() != null
                 ? product.getCategory().getBlingCategoryId()
                 : null;
