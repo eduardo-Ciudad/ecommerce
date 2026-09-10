@@ -6,6 +6,9 @@ import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
+import com.eduardo.ecomerce.domain.productimage.ImageSource;
+import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
+import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,6 +24,7 @@ import org.springframework.transaction.support.DefaultTransactionDefinition;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -35,6 +39,8 @@ class BlingServiceTest {
     @Mock private CategoryRepository categoryRepository;
     @Mock private ProductRepository productRepository;
     @Mock private ProductVariantRepository productVariantRepository;
+    @Mock private ProductImageRepository productImageRepository;
+    @Mock private ProductSpecificationRepository productSpecificationRepository;
     @Mock private BlingClient blingClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -49,6 +55,8 @@ class BlingServiceTest {
                 categoryRepository,
                 productRepository,
                 productVariantRepository,
+                productImageRepository,
+                productSpecificationRepository,
                 blingClient,
                 transactionManager,
                 "https://bling.example/authorize",
@@ -90,18 +98,21 @@ class BlingServiceTest {
     }
 
     @Test
-    void extractImageUrlReturnsNullForMissingAndBlankLinks() throws Exception {
+    void extractImagesSkipsEntriesWithMissingOrBlankLink() throws Exception {
         JsonNode missingLink = json("{" +
                 "\"data\":{\"midia\":{\"imagens\":{\"internas\":[{}]}}}}" );
         JsonNode blankLink = json("{" +
                 "\"data\":{\"midia\":{\"imagens\":{\"internas\":[{\"link\":\"\"}]}}}}" );
 
-        assertThat((String) ReflectionTestUtils.invokeMethod(service, "extractImageUrl", missingLink)).isNull();
-        assertThat((String) ReflectionTestUtils.invokeMethod(service, "extractImageUrl", blankLink)).isNull();
+        List<?> imagesFromMissingLink = (List<?>) ReflectionTestUtils.invokeMethod(service, "extractImages", missingLink);
+        List<?> imagesFromBlankLink = (List<?>) ReflectionTestUtils.invokeMethod(service, "extractImages", blankLink);
+
+        assertThat(imagesFromMissingLink).isEmpty();
+        assertThat(imagesFromBlankLink).isEmpty();
     }
 
     @Test
-    void blankImageFromBlingPreservesExistingProductImage() throws Exception {
+    void blankImageFromBlingClearsExistingCoverImage() throws Exception {
         when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
                 .thenReturn(transactionStatus);
         validToken();
@@ -114,22 +125,23 @@ class BlingServiceTest {
         existing.setImageUrl("https://cdn.example/original.jpg");
 
         when(blingClient.listProducts("token", 1)).thenReturn(json("""
-                {"data":[{"id":303,"nome":"Produto","codigo":"SKU-303","preco":"30.00","formato":"S"}]}
-                """));
+            {"data":[{"id":303,"nome":"Produto","codigo":"SKU-303","preco":"30.00","formato":"S"}]}
+            """));
         when(blingClient.listProducts("token", 2)).thenReturn(json("""
-                {"data":[]}
-                """));
+            {"data":[]}
+            """));
         when(blingClient.getProductById("token", 303L)).thenReturn(json("""
-                {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":4},
-                "midia":{"imagens":{"internas":[{"link":""}]}}}}
-                """));
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":4},
+            "midia":{"imagens":{"internas":[{"link":""}]}}}}
+            """));
         when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
         when(productRepository.findByBlingProductId(303L)).thenReturn(Optional.of(existing));
         when(productRepository.save(existing)).thenReturn(existing);
 
         service.syncProducts();
 
-        assertThat(existing.getImageUrl()).isEqualTo("https://cdn.example/original.jpg");
+        assertThat(existing.getImageUrl()).isNull();
+        verify(productImageRepository).deleteByProductIdAndSource(existing.getId(), ImageSource.BLING);
         verify(productRepository).save(existing);
     }
 

@@ -4,6 +4,8 @@ import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
+import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
+import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
@@ -38,6 +40,12 @@ class ProductServiceTest {
 
     @Mock
     private CategoryRepository categoryRepository;
+
+    @Mock
+    private ProductImageRepository productImageRepository;
+
+    @Mock
+    private ProductSpecificationRepository productSpecificationRepository;
 
     @InjectMocks
     private ProductService productService;

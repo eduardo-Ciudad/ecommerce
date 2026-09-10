@@ -4,9 +4,13 @@ import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
+import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
+import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
 import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
+import com.eduardo.ecomerce.dto.output.productimage.ProductImageOutput;
+import com.eduardo.ecomerce.dto.output.productspecification.ProductSpecificationOutput;
 import com.eduardo.ecomerce.dto.output.productvariant.ProductVariantOutput;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import jakarta.persistence.EntityNotFoundException;
@@ -31,6 +35,8 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final StorageService storageService;
+    private final ProductImageRepository productImageRepository;
+    private final ProductSpecificationRepository productSpecificationRepository;
 
     @Transactional
     public ProductOutput create(ProductInput input) {
@@ -120,6 +126,15 @@ public class ProductService {
                 .map(v -> new ProductVariantOutput(v.getId(), v.getSize(), v.getPrice(), v.getStock(), v.getCreatedAt()))
                 .toList();
 
+        List<ProductImageOutput> images = productImageRepository
+                .findByProductIdOrderByDisplayOrderAsc(product.getId()).stream()
+                .map(img -> new ProductImageOutput(img.getId(), img.getUrl(), img.getThumbnailUrl(), img.getDisplayOrder(), img.getCreatedAt()))
+                .toList();
+
+        List<ProductSpecificationOutput> specifications = productSpecificationRepository
+                .findByProductIdOrderByDisplayOrderAsc(product.getId()).stream()
+                .map(spec -> new ProductSpecificationOutput(spec.getId(), spec.getName(), spec.getValue(), spec.getDisplayOrder(), spec.getCreatedAt()))
+                .toList();
 
         return new ProductOutput(
                 product.getId(),
@@ -128,6 +143,8 @@ public class ProductService {
                 product.getName(),
                 product.getDescription(),
                 product.getImageUrl(),
+                images,
+                specifications,
                 product.getActive(),
                 variants,
                 product.getCreatedAt()

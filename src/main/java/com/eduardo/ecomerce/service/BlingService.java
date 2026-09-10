@@ -341,7 +341,7 @@ public class BlingService {
             return 0;
         }
 
-        int deactivated = productRepository.deactivateMissingFromBling(seenBlingProductIds);
+        int deactivated = transactionTemplate.execute(status -> productRepository.deactivateMissingFromBling(seenBlingProductIds));
         if (deactivated > 0) {
             log.info("{} produto(s) desativado(s) por não aparecerem mais na listagem do Bling", deactivated);
         }
