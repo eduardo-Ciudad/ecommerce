@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.service;
 
 import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
+import com.eduardo.ecomerce.domain.product.Brand;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
@@ -51,19 +52,11 @@ public class ProductService {
         return toOutput(product);
     }
 
-    @Transactional(readOnly = true)
-    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, UUID categoryId) {
-        if (categoryId == null) {
-            Page<Product> page = includeWithoutImage
-                    ? productRepository.findByActiveTrue(pageable)
-                    : productRepository.findByActiveTrueAndImageUrlIsNotNull(pageable);
-            return PageResponse.from(page.map(this::toOutput));
-        }
+    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, UUID categoryId, Brand brand) {
+        Set<UUID> categoryIds = categoryId == null ? null : resolveCategoryIdWithChildren(categoryId);
+        List<String> brandValues = brand == null ? null : brand.getSpecificationValues();
 
-        Set<UUID> categoryIds = resolveCategoryIdWithChildren(categoryId);
-        Page<Product> page = includeWithoutImage
-                ? productRepository.findByActiveTrueAndCategoryIdIn(categoryIds, pageable)
-                : productRepository.findByActiveTrueAndCategoryIdInAndImageUrlIsNotNull(categoryIds, pageable);
+        Page<Product> page = productRepository.search(categoryIds, includeWithoutImage, brandValues, pageable);
         return PageResponse.from(page.map(this::toOutput));
     }
 

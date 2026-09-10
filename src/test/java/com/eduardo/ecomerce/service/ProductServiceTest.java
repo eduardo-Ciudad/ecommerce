@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.service;
 
 import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.category.CategoryRepository;
+import com.eduardo.ecomerce.domain.product.Brand;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
@@ -13,12 +14,18 @@ import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -142,5 +149,45 @@ class ProductServiceTest {
 
         verify(storageService, never()).upload(any(), anyString());
         verify(productRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("findAllActive sem filtros deve chamar search com categoryIds e marca nulos")
+    void findAllActiveWithoutFiltersCallsSearchWithNullFilters() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(productRepository.search(isNull(), eq(false), isNull(), eq(pageable)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(pageable, false, null, null);
+
+        verify(productRepository).search(isNull(), eq(false), isNull(), eq(pageable));
+    }
+
+    @Test
+    @DisplayName("findAllActive com categoryId deve resolver categorias filhas e repassar para search")
+    void findAllActiveWithCategoryResolvesChildrenAndPassesToSearch() {
+        UUID categoryId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(categoryRepository.findByParentId(categoryId)).thenReturn(List.of());
+        when(productRepository.search(any(), eq(false), isNull(), eq(pageable)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(pageable, false, categoryId, null);
+
+        ArgumentCaptor<Collection<UUID>> captor = ArgumentCaptor.forClass(Collection.class);
+        verify(productRepository).search(captor.capture(), eq(false), isNull(), eq(pageable));
+        assertThat(captor.getValue()).containsExactly(categoryId);
+    }
+
+    @Test
+    @DisplayName("findAllActive com marca deve repassar as grafias aceitas daquela marca para search")
+    void findAllActiveWithBrandPassesSpecificationValuesToSearch() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(productRepository.search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), eq(pageable)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(pageable, false, null, Brand.FAKINI);
+
+        verify(productRepository).search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), eq(pageable));
     }
 }
