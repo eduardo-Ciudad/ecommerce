@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.domain.product.Brand;
+import com.eduardo.ecomerce.domain.productvariant.SizeRange;
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
 import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
@@ -43,7 +44,7 @@ public class ProductController {
     }
 
     @GetMapping
-    @Operation(summary = "Listar produtos ativos", description = "Retorna a lista paginada de produtos ativos cadastrados, com filtros opcionais de categoria e marca")
+    @Operation(summary = "Listar produtos ativos", description = "Retorna a lista paginada de produtos ativos cadastrados, com filtros opcionais de categoria, marca e faixa de tamanho")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Página retornada com sucesso")
     })
@@ -51,8 +52,9 @@ public class ProductController {
             @PageableDefault(size = 20) Pageable pageable,
             @RequestParam(name = "includeWithoutImage", defaultValue = "false") boolean includeWithoutImage,
             @RequestParam(required = false) UUID categoryId,
-            @RequestParam(required = false) String brand) {
-        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage, categoryId, Brand.fromParam(brand)));
+            @RequestParam(required = false) String brand,
+            @RequestParam(required = false) String size) {
+        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage, categoryId, Brand.fromParam(brand), SizeRange.fromParam(size)));
     }
 
     @GetMapping("/{id}")

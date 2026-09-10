@@ -7,6 +7,7 @@ import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
 import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
+import com.eduardo.ecomerce.domain.productvariant.SizeRange;
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
 import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
@@ -52,11 +53,12 @@ public class ProductService {
         return toOutput(product);
     }
 
-    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, UUID categoryId, Brand brand) {
+    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, UUID categoryId, Brand brand, SizeRange sizeRange) {
         Set<UUID> categoryIds = categoryId == null ? null : resolveCategoryIdWithChildren(categoryId);
         List<String> brandValues = brand == null ? null : brand.getSpecificationValues();
+        List<String> sizeValues = sizeRange == null ? null : sizeRange.getAcceptedSizes();
 
-        Page<Product> page = productRepository.search(categoryIds, includeWithoutImage, brandValues, pageable);
+        Page<Product> page = productRepository.search(categoryIds, includeWithoutImage, brandValues, sizeValues, pageable);
         return PageResponse.from(page.map(this::toOutput));
     }
 

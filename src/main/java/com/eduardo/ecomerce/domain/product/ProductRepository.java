@@ -23,19 +23,24 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     int deactivateMissingFromBling(@Param("seenIds") Collection<Long> seenIds);
 
     @Query("""
-            SELECT DISTINCT p FROM Product p
-            WHERE p.active = true
-              AND (:categoryIds IS NULL OR p.category.id IN :categoryIds)
-              AND (:includeWithoutImage = true OR (p.imageUrl IS NOT NULL AND p.imageUrl <> ''))
-              AND (:brandValues IS NULL OR EXISTS (
-                  SELECT 1 FROM ProductSpecification ps
-                  WHERE ps.product = p AND ps.name = 'Marca' AND ps.value IN :brandValues
-              ))
-            """)
+        SELECT DISTINCT p FROM Product p
+        WHERE p.active = true
+          AND (:categoryIds IS NULL OR p.category.id IN :categoryIds)
+          AND (:includeWithoutImage = true OR (p.imageUrl IS NOT NULL AND p.imageUrl <> ''))
+          AND (:brandValues IS NULL OR EXISTS (
+              SELECT 1 FROM ProductSpecification ps
+              WHERE ps.product = p AND ps.name = 'Marca' AND ps.value IN :brandValues
+          ))
+          AND (:sizeValues IS NULL OR EXISTS (
+              SELECT 1 FROM ProductVariant pv
+              WHERE pv.product = p AND pv.size IN :sizeValues
+          ))
+        """)
     Page<Product> search(
             @Param("categoryIds") Collection<UUID> categoryIds,
             @Param("includeWithoutImage") boolean includeWithoutImage,
             @Param("brandValues") Collection<String> brandValues,
+            @Param("sizeValues") Collection<String> sizeValues,
             Pageable pageable
     );
 

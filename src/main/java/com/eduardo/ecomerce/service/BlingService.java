@@ -615,9 +615,19 @@ public class BlingService {
             return null;
         }
 
-        String raw = nome.asText(); // ex: "tamanho:10"
-        int colonIndex = raw.indexOf(':');
-        String size = colonIndex >= 0 ? raw.substring(colonIndex + 1).trim() : raw;
+        String raw = nome.asText(); // ex: "tamanho:10", "Cor:Cinza;Tamanho:4"
+        int tamanhoIndex = raw.toLowerCase(Locale.ROOT).indexOf("tamanho:");
+        if (tamanhoIndex < 0) {
+            return null;
+        }
+
+        String afterTamanho = raw.substring(tamanhoIndex + "tamanho:".length());
+        int semicolonIndex = afterTamanho.indexOf(';');
+        String size = (semicolonIndex >= 0 ? afterTamanho.substring(0, semicolonIndex) : afterTamanho).trim();
+
+        if (size.isBlank()) {
+            return null;
+        }
 
         if (size.length() > MAX_SIZE_LENGTH) {
             log.warn("Valor de tamanho excede {} caracteres, truncando: \"{}\"", MAX_SIZE_LENGTH, size);
