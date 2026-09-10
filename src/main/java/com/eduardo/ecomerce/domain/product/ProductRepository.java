@@ -14,10 +14,6 @@ import java.util.UUID;
 
 public interface ProductRepository extends JpaRepository<Product, UUID> {
 
-    Page<Product> findByActiveTrue(Pageable pageable);
-
-    @Query("SELECT p FROM Product p WHERE p.active = true AND p.imageUrl IS NOT NULL AND p.imageUrl <> ''")
-    Page<Product> findByActiveTrueAndImageUrlIsNotNull(Pageable pageable);
 
     boolean existsByCategoryId(UUID categoryId);
     Optional<Product> findByBlingProductId(Long blingProductId);
@@ -26,10 +22,21 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("UPDATE Product p SET p.active = false WHERE p.blingProductId IS NOT NULL AND p.active = true AND p.blingProductId NOT IN :seenIds")
     int deactivateMissingFromBling(@Param("seenIds") Collection<Long> seenIds);
 
-    Page<Product> findByActiveTrueAndCategoryIdIn(Collection<UUID> categoryIds, Pageable pageable);
-
-    @Query("SELECT p FROM Product p WHERE p.active = true AND p.category.id IN :categoryIds AND p.imageUrl IS NOT NULL AND p.imageUrl <> ''")
-    Page<Product> findByActiveTrueAndCategoryIdInAndImageUrlIsNotNull(@Param("categoryIds") Collection<UUID> categoryIds, Pageable pageable);
-
+    @Query("""
+            SELECT DISTINCT p FROM Product p
+            WHERE p.active = true
+              AND (:categoryIds IS NULL OR p.category.id IN :categoryIds)
+              AND (:includeWithoutImage = true OR (p.imageUrl IS NOT NULL AND p.imageUrl <> ''))
+              AND (:brandValues IS NULL OR EXISTS (
+                  SELECT 1 FROM ProductSpecification ps
+                  WHERE ps.product = p AND ps.name = 'Marca' AND ps.value IN :brandValues
+              ))
+            """)
+    Page<Product> search(
+            @Param("categoryIds") Collection<UUID> categoryIds,
+            @Param("includeWithoutImage") boolean includeWithoutImage,
+            @Param("brandValues") Collection<String> brandValues,
+            Pageable pageable
+    );
 
 }
