@@ -53,12 +53,15 @@ public class ProductService {
         return toOutput(product);
     }
 
-    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, UUID categoryId, Brand brand, SizeRange sizeRange) {
+    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, UUID categoryId, Brand brand, SizeRange sizeRange, String nameQuery) {
         Set<UUID> categoryIds = categoryId == null ? null : resolveCategoryIdWithChildren(categoryId);
         List<String> brandValues = brand == null ? null : brand.getSpecificationValues();
         List<String> sizeValues = sizeRange == null ? null : sizeRange.getAcceptedSizes();
+        String nameQueryPattern = (nameQuery == null || nameQuery.isBlank())
+                ? null
+                : "%" + nameQuery.trim().toLowerCase() + "%";
 
-        Page<Product> page = productRepository.search(categoryIds, includeWithoutImage, brandValues, sizeValues, pageable);
+        Page<Product> page = productRepository.search(categoryIds, includeWithoutImage, brandValues, sizeValues, nameQueryPattern, pageable);
         return PageResponse.from(page.map(this::toOutput));
     }
 

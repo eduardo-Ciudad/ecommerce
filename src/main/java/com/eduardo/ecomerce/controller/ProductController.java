@@ -53,8 +53,9 @@ public class ProductController {
             @RequestParam(name = "includeWithoutImage", defaultValue = "false") boolean includeWithoutImage,
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) String brand,
-            @RequestParam(required = false) String sizeRange) {
-        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage, categoryId, Brand.fromParam(brand), SizeRange.fromParam(sizeRange)));
+            @RequestParam(required = false) String sizeRange,
+            @RequestParam(required = false) String q) {
+        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage, categoryId, Brand.fromParam(brand), SizeRange.fromParam(sizeRange), q));
     }
 
     @GetMapping("/{id}")

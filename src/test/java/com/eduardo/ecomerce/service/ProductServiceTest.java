@@ -7,6 +7,7 @@ import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
 import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
+import com.eduardo.ecomerce.domain.productvariant.SizeRange;
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
@@ -152,15 +153,15 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("findAllActive sem filtros deve chamar search com categoryIds e marca nulos")
+    @DisplayName("findAllActive sem filtros deve chamar search com categoryIds, marca, tamanho e nome nulos")
     void findAllActiveWithoutFiltersCallsSearchWithNullFilters() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(false), isNull(), eq(pageable)))
+        when(productRepository.search(isNull(), eq(false), isNull(), isNull(), isNull(), eq(pageable)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, false, null, null);
+        productService.findAllActive(pageable, false, null, null, null, null);
 
-        verify(productRepository).search(isNull(), eq(false), isNull(), eq(pageable));
+        verify(productRepository).search(isNull(), eq(false), isNull(), isNull(), isNull(), eq(pageable));
     }
 
     @Test
@@ -169,13 +170,13 @@ class ProductServiceTest {
         UUID categoryId = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         when(categoryRepository.findByParentId(categoryId)).thenReturn(List.of());
-        when(productRepository.search(any(), eq(false), isNull(), eq(pageable)))
+        when(productRepository.search(any(), eq(false), isNull(), isNull(), isNull(), eq(pageable)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, false, categoryId, null);
+        productService.findAllActive(pageable, false, categoryId, null, null, null);
 
         ArgumentCaptor<Collection<UUID>> captor = ArgumentCaptor.forClass(Collection.class);
-        verify(productRepository).search(captor.capture(), eq(false), isNull(), eq(pageable));
+        verify(productRepository).search(captor.capture(), eq(false), isNull(), isNull(), isNull(), eq(pageable));
         assertThat(captor.getValue()).containsExactly(categoryId);
     }
 
@@ -183,11 +184,35 @@ class ProductServiceTest {
     @DisplayName("findAllActive com marca deve repassar as grafias aceitas daquela marca para search")
     void findAllActiveWithBrandPassesSpecificationValuesToSearch() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), eq(pageable)))
+        when(productRepository.search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), isNull(), isNull(), eq(pageable)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, false, null, Brand.FAKINI);
+        productService.findAllActive(pageable, false, null, Brand.FAKINI, null, null);
 
-        verify(productRepository).search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), eq(pageable));
+        verify(productRepository).search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), isNull(), isNull(), eq(pageable));
+    }
+
+    @Test
+    @DisplayName("findAllActive com faixa de tamanho deve repassar os tamanhos aceitos para search")
+    void findAllActiveWithSizeRangePassesAcceptedSizesToSearch() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(productRepository.search(isNull(), eq(false), isNull(), eq(SizeRange.QUATRO_DEZ_ANOS.getAcceptedSizes()), isNull(), eq(pageable)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(pageable, false, null, null, SizeRange.QUATRO_DEZ_ANOS, null);
+
+        verify(productRepository).search(isNull(), eq(false), isNull(), eq(SizeRange.QUATRO_DEZ_ANOS.getAcceptedSizes()), isNull(), eq(pageable));
+    }
+
+    @Test
+    @DisplayName("findAllActive com nome em branco deve repassar null para search, não string vazia")
+    void findAllActiveWithBlankNameQueryPassesNullToSearch() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(productRepository.search(isNull(), eq(false), isNull(), isNull(), isNull(), eq(pageable)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(pageable, false, null, null, null, "   ");
+
+        verify(productRepository).search(isNull(), eq(false), isNull(), isNull(), isNull(), eq(pageable));
     }
 }
