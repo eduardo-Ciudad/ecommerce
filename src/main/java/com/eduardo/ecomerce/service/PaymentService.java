@@ -48,6 +48,7 @@ public class PaymentService {
 
     public enum PaymentCancellationOutcome {
         NOT_CANCELLABLE,
+        NOT_FOUND,
         CANCELLED,
         FAILED
     }
@@ -287,6 +288,16 @@ public class PaymentService {
             paymentClient.cancel(Long.parseLong(paymentId));
             log.info("Payment {} cancelado no Mercado Pago (expiração de pedido)", paymentId);
             return PaymentCancellationOutcome.CANCELLED;
+
+        } catch (com.mercadopago.exceptions.MPApiException e) {
+            if (e.getStatusCode() == 404) {
+                log.info("Payment {} não encontrado no Mercado Pago (expiração de pedido) — nada a cancelar",
+                        paymentId);
+                return PaymentCancellationOutcome.NOT_FOUND;
+            }
+            log.error("Falha ao tentar cancelar payment {} no Mercado Pago (expiração de pedido) - Status: {}, Content: {}",
+                    paymentId, e.getStatusCode(), e.getApiResponse().getContent());
+            return PaymentCancellationOutcome.FAILED;
 
         } catch (Exception e) {
             log.error("Falha ao tentar cancelar payment {} no Mercado Pago (expiração de pedido)", paymentId, e);

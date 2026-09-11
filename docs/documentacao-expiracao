@@ -1,0 +1,88 @@
+# Expiração de pedidos pendentes
+
+## O que é
+
+Pedidos com status `PENDING` que ficam sem pagamento confirmado por tempo
+demais são cancelados automaticamente, o estoque reservado é devolvido, e
+o pagamento correspondente (se existir) é cancelado no Mercado Pago.
+
+- **Janela de expiração:** 30 minutos desde a criação do pedido
+  (`OrderExpirationScheduler.PENDING_ORDER_EXPIRATION_MINUTES`).
+- **Frequência do job:** a cada 5 minutos
+  (`@Scheduled(fixedDelay = 5 * 60 * 1000)`).
+
+## Fluxo
+
+1. `expireAbandonedOrders()` busca todo pedido `PENDING` criado antes do
+   cutoff (`agora - 30min`) via
+   `orderRepository.findByStatusAndCreatedAtBefore`.
+2. Para cada candidato, `processExpiredOrder(orderId)` roda isoladamente,
+   dentro de um `try/catch` por pedido — uma falha em um pedido não
+   interrompe o processamento dos demais.
+3. `lockPendingOrderForExpiration(orderId)` trava o pedido
+   (`findByIdForUpdate`, lock pessimista) e confirma que ele ainda está
+   `PENDING` nesse instante. Se não estiver mais (ex.: foi pago entre a
+   busca e o processamento), o processamento para aqui — sem alteração.
+4. A partir daí, o fluxo se divide em dois casos:
+
+### Caso A — pedido sem `paymentId` (nunca chegou a iniciar pagamento)
+
+`findExistingPaymentForOrder` consulta o Mercado Pago por
+`external_reference` antes de assumir que não há nada a cancelar — isso
+cobre o caso de o pagamento ter sido criado no MP mas a resposta nunca
+ter voltado a tempo de salvar o `paymentId` no pedido (pagamento órfão).
+
+| `OrphanedPaymentOutcome` | Significado                                            | Ação                                          |
+|--------------------------|---------------------------------------------------------|------------------------------------------------|
+| `NOT_FOUND`               | Confirmado: não existe pagamento nenhum no MP para esse pedido | `cancelExpiredOrderWithoutPayment` — cancela e devolve estoque |
+| `FOUND`                    | Existe um pagamento órfão — segue pro Caso B com esse `paymentId` | — |
+| `AMBIGUOUS`                | Mais de um pagamento válido encontrado — requer investigação manual | Nenhuma — só loga erro |
+| `FAILED`                   | Falha ao consultar o Mercado Pago                     | Nenhuma — tenta de novo no próximo ciclo      |
+
+### Caso B — pedido com `paymentId` (já tem pagamento associado)
+
+`tryCancelPendingPayment(paymentId)` tenta cancelar diretamente no
+Mercado Pago.
+
+| `PaymentCancellationOutcome` | Significado                                         | Ação                                              |
+|-------------------------------|-------------------------------------------------------|-----------------------------------------------------|
+| `CANCELLED`                     | Pagamento cancelado com sucesso no MP                | `finalizeExpiredOrderCancellation` — cancela pedido e devolve estoque |
+| `NOT_CANCELLABLE`                | Pagamento já foi resolvido (aprovado/rejeitado) — não pode ser cancelado | Nenhuma — o webhook já deve ter tratado esse pedido separadamente |
+| `NOT_FOUND`                       | Pagamento não existe no MP (404)                   | Nenhuma — **limitação conhecida, ver seção abaixo** |
+| `FAILED`                          | Erro real na chamada (timeout, 5xx, etc.)          | Nenhuma — tenta de novo no próximo ciclo          |
+
+## Segurança contra concorrência
+
+Tanto `cancelExpiredOrderWithoutPayment` quanto
+`finalizeExpiredOrderCancellation` re-checam o estado do pedido **dentro**
+da mesma transação que faz a alteração (`stillEligible` /
+`stillMatches`), depois de já ter passado pelo lock pessimista em
+`lockPendingOrderForExpiration`. Isso existe porque a chamada ao
+Mercado Pago (cancelar o pagamento) acontece **fora** de transação de
+banco — entre o lock inicial e a escrita final, o pedido pode ter mudado
+de estado por outro caminho (ex.: o webhook de pagamento chegou nesse
+meio-tempo). Se `stillEligible`/`stillMatches` for `false`, nada é
+alterado e um `log.warn` registra a divergência para investigação manual.
+
+## Devolução de estoque
+
+Sempre que um pedido expirado é efetivamente cancelado (nos dois casos),
+`restoreStock(order)` devolve a quantidade de cada item ao estoque da
+variação correspondente.
+
+## Limitação conhecida — pendente de decisão
+
+Quando `tryCancelPendingPayment` retorna `NOT_FOUND` (pagamento não
+existe no MP), o pedido **não é finalizado** — continua `PENDING` e será
+reavaliado no próximo ciclo do job, a cada 5 minutos, indefinidamente.
+Diferente do Caso A (que trata `NOT_FOUND` explicitamente cancelando o
+pedido), o Caso B hoje não tem esse tratamento. Decisão de como resolver
+isso ainda está em aberto.
+
+## Onde olhar nos logs
+
+- `"Job de expiração de pedidos: N candidato(s) encontrado(s)"` — início de cada ciclo.
+- `"Pedido {} expirado sem pagamento ... cancelado e estoque devolvido"` — Caso A concluído.
+- `"Pedido {} cancelado por expiração — payment {} confirmado cancelado"` — Caso B concluído.
+- `"... mudou de estado durante a expiração ..."` (nível `WARN`) — divergência de concorrência, requer investigação se aparecer com frequência.
+- `"Falha ao tentar cancelar payment {} ... - Status: {}, Content: {}"` (nível `ERROR`) — falha real na chamada ao Mercado Pago, com corpo da resposta.
