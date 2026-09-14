@@ -95,6 +95,7 @@ public class CategoryService {
                 category.getName(),
                 category.getImageUrl(),
                 category.getParent() != null ? category.getParent().getId() : null,
+                category.getBlingCategoryId(),
                 category.getCreatedAt()
         );
     }

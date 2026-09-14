@@ -151,7 +151,8 @@ public class ProductService {
                 specifications,
                 product.getActive(),
                 variants,
-                product.getCreatedAt()
+                product.getCreatedAt(),
+                product.getBlingProductId()
         );
     }
 }

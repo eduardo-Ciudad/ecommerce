@@ -19,5 +19,6 @@ public record ProductOutput(
         List<ProductSpecificationOutput> specifications,
         Boolean active,
         List<ProductVariantOutput> variants,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        Long blingProductId
 ) { }

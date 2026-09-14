@@ -8,6 +8,7 @@ public record CategoryOutput(
         String name,
         String imageUrl,
         UUID parentId,
+        Long blingCategoryId,
         LocalDateTime createdAt
 ) {
 }
