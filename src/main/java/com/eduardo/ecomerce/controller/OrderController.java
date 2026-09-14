@@ -80,4 +80,17 @@ public class OrderController {
             @PageableDefault(size = 20) Pageable pageable) {
         return ResponseEntity.ok(orderService.findAll(pageable));
     }
+
+    @PutMapping("/{id}/cancel")
+    @Operation(summary = "Cancelar pedido", description = "Permite que o cliente cancele o próprio pedido, desde que ainda esteja pendente e sem pagamento iniciado")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Pedido cancelado com sucesso"),
+            @ApiResponse(responseCode = "401", description = "Usuário não autenticado"),
+            @ApiResponse(responseCode = "404", description = "Pedido não encontrado"),
+            @ApiResponse(responseCode = "422", description = "Pedido não pode mais ser cancelado")
+    })
+    public ResponseEntity<OrderOutput> cancel(@PathVariable UUID id) {
+        UUID userId = SecurityUtils.getAuthenticatedUserId();
+        return ResponseEntity.ok(orderService.cancelByCustomer(userId, id));
+    }
 }
