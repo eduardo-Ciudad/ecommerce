@@ -88,4 +88,14 @@ public class CategoryController {
         categoryService.delete(id);
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/by-bling-id/{blingCategoryId}")
+    @Operation(summary = "Buscar categoria por ID do Bling", description = "Retorna os dados de uma categoria a partir do seu identificador no Bling — útil para resolver o UUID interno, que difere entre ambientes")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Categoria encontrada"),
+            @ApiResponse(responseCode = "404", description = "Categoria não encontrada")
+    })
+    public ResponseEntity<CategoryOutput> findByBlingCategoryId(@PathVariable Long blingCategoryId) {
+        return ResponseEntity.ok(categoryService.findByBlingCategoryId(blingCategoryId));
+    }
 }

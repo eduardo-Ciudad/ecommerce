@@ -43,6 +43,16 @@ public class ProductController {
         return ResponseEntity.status(HttpStatus.CREATED).body(productService.create(input));
     }
 
+    @GetMapping("/by-bling-id/{blingProductId}")
+    @Operation(summary = "Buscar produto por ID do Bling", description = "Retorna os dados de um produto a partir do seu identificador no Bling — útil para resolver o UUID interno, que difere entre ambientes")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Produto encontrado"),
+            @ApiResponse(responseCode = "404", description = "Produto não encontrado")
+    })
+    public ResponseEntity<ProductOutput> findByBlingProductId(@PathVariable Long blingProductId) {
+        return ResponseEntity.ok(productService.findByBlingProductId(blingProductId));
+    }
+
     @GetMapping
     @Operation(summary = "Listar produtos ativos", description = "Retorna a lista paginada de produtos ativos cadastrados, com filtros opcionais de categoria, marca e faixa de tamanho")
     @ApiResponses(value = {

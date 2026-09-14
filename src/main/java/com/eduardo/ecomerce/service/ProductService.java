@@ -65,6 +65,12 @@ public class ProductService {
         return PageResponse.from(page.map(this::toOutput));
     }
 
+    public ProductOutput findByBlingProductId(Long blingProductId) {
+        Product product = productRepository.findByBlingProductId(blingProductId)
+                .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado"));
+        return toOutput(product);
+    }
+
     private Set<UUID> resolveCategoryIdWithChildren(UUID categoryId) {
         Set<UUID> ids = new HashSet<>();
         ids.add(categoryId);

@@ -49,6 +49,12 @@ public class CategoryService {
         return toOutput(category);
     }
 
+    public CategoryOutput findByBlingCategoryId(Long blingCategoryId) {
+        Category category = categoryRepository.findByBlingCategoryId(blingCategoryId)
+                .orElseThrow(() -> new ResourceNotFoundException("Categoria não encontrada"));
+        return toOutput(category);
+    }
+
     public void delete(UUID id) {
         if (!categoryRepository.existsById(id)) {
             throw new ResourceNotFoundException("Categoria não encontrada");
