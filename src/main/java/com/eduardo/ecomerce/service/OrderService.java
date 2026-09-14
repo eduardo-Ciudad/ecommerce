@@ -236,6 +236,29 @@ public class OrderService {
         log.info("Estoque devolvido — orderId: {}", order.getId());
     }
 
+    @Transactional
+    public OrderOutput cancelByCustomer(UUID userId, UUID orderId) {
+        Order order = orderRepository.findByIdAndUserIdForUpdate(orderId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pedido nao encontrado"));
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw  new BusinessException("esse pedido nao pode ser alterado");
+        }
+        if (order.getPaymentId() != null) {
+            throw new BusinessException(
+                    "Esse pedido já tem um pagamento em andamento e não pode ser cancelado automaticamente. Entre em contato com o suporte.");
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+        orderRepository.save(order);
+        restoreStock(order);
+
+        log.info("Pedido cancelado pelo cliente — orderId: {}, userId: {}", orderId, userId);
+        return toOutput(order);
+    }
+
+
+
     private OrderOutput toOutput(Order order) {
         List<OrderItemOutput> items = order.getItems().stream()
                 .map(item -> new OrderItemOutput(
