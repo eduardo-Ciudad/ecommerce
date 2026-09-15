@@ -52,6 +52,7 @@ public class BlingService {
 
     private final ProductImageRepository productImageRepository;
     private final ProductSpecificationRepository productSpecificationRepository;
+    private final BlingImageSyncService blingImageSyncService;
     private final BlingTokenRepository blingTokenRepository;
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
@@ -76,6 +77,7 @@ public class BlingService {
             ProductVariantRepository productVariantRepository,
             ProductImageRepository productImageRepository,
             ProductSpecificationRepository productSpecificationRepository,
+            BlingImageSyncService blingImageSyncService,
             BlingClient blingClient,
             PlatformTransactionManager transactionManager,
             @Value("${bling.authorize-url}") String authorizeUrl,
@@ -87,6 +89,7 @@ public class BlingService {
         this.productVariantRepository = productVariantRepository;
         this.productImageRepository = productImageRepository;
         this.productSpecificationRepository = productSpecificationRepository;
+        this.blingImageSyncService = blingImageSyncService;
         this.blingClient = blingClient;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.authorizeUrl = authorizeUrl;
@@ -439,24 +442,29 @@ public class BlingService {
             return false;
         }
 
-        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-            Category category = categoryRepository.findByBlingCategoryId(blingCategoryId).orElse(null);
-            if (category == null) {
-                log.error(
-                        "Categoria do Bling não encontrada localmente (blingCategoryId={}) para variação id={} "
-                                + "— rode syncCategories antes de syncProducts",
-                        blingCategoryId, item.id()
-                );
-                return false;
-            }
+        Category category = categoryRepository.findByBlingCategoryId(blingCategoryId).orElse(null);
+        if (category == null) {
+            log.error(
+                    "Categoria do Bling não encontrada localmente (blingCategoryId={}) para variação id={} "
+                            + "— rode syncCategories antes de syncProducts",
+                    blingCategoryId, item.id()
+            );
+            return false;
+        }
 
+        boolean shouldSyncMedia = parentIdsWithMediaSynced.add(item.idProdutoPai());
+        List<BlingImageSyncService.UploadedImage> uploadedImages = shouldSyncMedia
+                ? uploadImagesFor(item.idProdutoPai(), detail)
+                : List.of();
+
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
             Product product = resolveParentProduct(item.idProdutoPai(), item.id(), parentNome, category, description);
             if (product == null) {
                 return false;
             }
 
-            if (parentIdsWithMediaSynced.add(item.idProdutoPai())) {
-                syncProductMedia(product, detail);
+            if (shouldSyncMedia) {
+                syncProductMedia(product, detail, uploadedImages);
             }
 
             upsertVariant(product, item.id(), item.sku(), item.price(), stock, size);
@@ -476,17 +484,19 @@ public class BlingService {
             return false;
         }
 
-        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-            Category category = categoryRepository.findByBlingCategoryId(blingCategoryId).orElse(null);
-            if (category == null) {
-                log.error(
-                        "Categoria do Bling não encontrada localmente (blingCategoryId={}) para produto simples id={} "
-                                + "— rode syncCategories antes de syncProducts",
-                        blingCategoryId, item.id()
-                );
-                return false;
-            }
+        Category category = categoryRepository.findByBlingCategoryId(blingCategoryId).orElse(null);
+        if (category == null) {
+            log.error(
+                    "Categoria do Bling não encontrada localmente (blingCategoryId={}) para produto simples id={} "
+                            + "— rode syncCategories antes de syncProducts",
+                    blingCategoryId, item.id()
+            );
+            return false;
+        }
 
+        List<BlingImageSyncService.UploadedImage> uploadedImages = uploadImagesFor(item.id(), detail);
+
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
             Product product = productRepository.findByBlingProductId(item.id()).orElseGet(Product::new);
             product.setBlingProductId(item.id());
             product.setName(item.nome());
@@ -497,18 +507,17 @@ public class BlingService {
             }
             product = productRepository.save(product);
 
-            syncProductMedia(product, detail);
+            syncProductMedia(product, detail, uploadedImages);
 
             upsertVariant(product, null, item.sku(), item.price(), stock, null);
             return true;
         }));
     }
 
-    private void syncProductMedia(Product product, JsonNode detail) {
-        List<ExtractedImage> images = extractImages(detail);
+    private void syncProductMedia(Product product, JsonNode detail, List<BlingImageSyncService.UploadedImage> uploadedImages) {
         productImageRepository.deleteByProductIdAndSource(product.getId(), ImageSource.BLING);
 
-        for (ExtractedImage image : images) {
+        for (BlingImageSyncService.UploadedImage image : uploadedImages) {
             ProductImage productImage = new ProductImage();
             productImage.setProduct(product);
             productImage.setUrl(image.url());
@@ -529,9 +538,6 @@ public class BlingService {
             productSpecification.setDisplayOrder(specification.displayOrder());
             productSpecificationRepository.save(productSpecification);
         }
-
-        String coverImageUrl = images.isEmpty() ? null : images.get(0).url();
-        product.setImageUrl(coverImageUrl);
     }
 
 
@@ -701,6 +707,21 @@ public class BlingService {
         String texto = Jsoup.parse(fonte).text().replace('\u00a0', ' ').trim();
         return texto.isBlank() ? null : texto;
     }
+
+
+    private List<BlingImageSyncService.UploadedImage> uploadImagesFor(Long blingProductId, JsonNode detail) {
+        List<ExtractedImage> extracted = extractImages(detail);
+        if (extracted.isEmpty()) {
+            return List.of();
+        }
+
+        List<BlingImageSyncService.SourceImage> sources = extracted.stream()
+                .map(img -> new BlingImageSyncService.SourceImage(img.url(), img.displayOrder()))
+                .toList();
+
+        return blingImageSyncService.syncImages(blingProductId, sources);
+    }
+
 
     private List<ExtractedImage> extractImages(JsonNode detail) {
         JsonNode internas = detail.path("data").path("midia").path("imagens").path("internas");
