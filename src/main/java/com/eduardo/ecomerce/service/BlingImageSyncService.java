@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.service;
 
 
+import com.eduardo.ecomerce.infra.bling.BlingRequestThrottler;
 import com.eduardo.ecomerce.infra.http.AppRestClientFactory;
 import lombok.extern.slf4j.Slf4j;
 import net.coobird.thumbnailator.Thumbnails;
@@ -14,6 +15,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 
@@ -30,11 +32,12 @@ public class BlingImageSyncService {
 
     private final RestClient downloadClient;
     private final StorageService storageService;
+    private final BlingRequestThrottler throttler;
 
-
-    public BlingImageSyncService(AppRestClientFactory restClientFactory, StorageService storageService) {
+    public BlingImageSyncService(AppRestClientFactory restClientFactory, StorageService storageService, BlingRequestThrottler throttler) {
         this.downloadClient = restClientFactory.create("");
         this.storageService = storageService;
+        this.throttler = throttler;
     }
 
 
@@ -72,6 +75,7 @@ public class BlingImageSyncService {
    }
 
     private byte[] download(String url) {
+        throttler.throttle();
         return downloadClient.get()
                 .uri(URI.create(url))
                 .retrieve()
@@ -81,7 +85,13 @@ public class BlingImageSyncService {
     private byte[] compress(byte[] original, int maxDimension, float quality) throws IOException {
         BufferedImage sourceImage = ImageIO.read(new ByteArrayInputStream(original));
         if (sourceImage == null) {
-            throw new IOException("Não foi possível decodificar a imagem");
+            String hex = original.length >= 12
+                    ? bytesToHex(Arrays.copyOfRange(original, 0, 12))
+                    : bytesToHex(original);
+            throw new IOException(
+                    "Não foi possível decodificar a imagem (tamanho=%d bytes, primeiros bytes=%s)"
+                            .formatted(original.length, hex)
+            );
         }
 
         // não faz upscale: se a imagem original já é menor que o alvo, só recomprime no tamanho dela
@@ -96,5 +106,13 @@ public class BlingImageSyncService {
                 .toOutputStream(output);
 
         return output.toByteArray();
+    }
+
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02X ", b));
+        }
+        return sb.toString().trim();
     }
 }
