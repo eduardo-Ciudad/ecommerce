@@ -44,19 +44,24 @@ public class StorageService {
         String key = folder + "/" + UUID.randomUUID() + extension;
 
         try {
-            PutObjectRequest request = PutObjectRequest.builder()
-                    .bucket(bucket)
-                    .key(key)
-                    .contentType(file.getContentType())
-                    .build();
-
-            s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
-
-            return publicUrl + "/" + key;
-
+            return uploadBytes(file.getBytes(), file.getContentType(), key);
         } catch (IOException e) {
             throw new RuntimeException("Erro ao fazer upload da imagem", e);
         }
+    }
+
+    public String uploadBytes(byte[] bytes, String contentType, String key) {
+        validateBytes(bytes, contentType);
+
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentType(contentType)
+                .build();
+
+        s3Client.putObject(request, RequestBody.fromBytes(bytes));
+
+        return publicUrl + "/" + key;
     }
 
     private void validate(MultipartFile file) {
@@ -83,6 +88,26 @@ public class StorageService {
             }
         } catch (IOException e) {
             throw new IllegalArgumentException("Erro ao validar arquivo");
+        }
+    }
+
+    private void validateBytes(byte[] bytes, String contentType) {
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("Arquivo não pode ser vazio");
+        }
+
+        if (bytes.length > MAX_SIZE) {
+            throw new IllegalArgumentException("Arquivo excede o tamanho máximo de 5MB");
+        }
+
+        if (!ALLOWED_TYPES.contains(contentType)) {
+            throw new IllegalArgumentException(
+                    "Tipo de arquivo não permitido. Use: JPEG, PNG ou WebP"
+            );
+        }
+
+        if (bytes.length < 12 || !isValidImageMagicBytes(bytes)) {
+            throw new IllegalArgumentException("Conteúdo do arquivo não corresponde a uma imagem válida");
         }
     }
 
