@@ -538,6 +538,9 @@ public class BlingService {
             productSpecification.setDisplayOrder(specification.displayOrder());
             productSpecificationRepository.save(productSpecification);
         }
+
+        String coverImageUrl = uploadedImages.isEmpty() ? null : uploadedImages.get(0).url();
+        product.setImageUrl(coverImageUrl);
     }
 
 

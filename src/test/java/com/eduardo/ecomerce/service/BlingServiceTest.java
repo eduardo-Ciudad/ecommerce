@@ -41,6 +41,7 @@ class BlingServiceTest {
     @Mock private ProductVariantRepository productVariantRepository;
     @Mock private ProductImageRepository productImageRepository;
     @Mock private ProductSpecificationRepository productSpecificationRepository;
+    @Mock private BlingImageSyncService blingImageSyncService;
     @Mock private BlingClient blingClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -57,6 +58,7 @@ class BlingServiceTest {
                 productVariantRepository,
                 productImageRepository,
                 productSpecificationRepository,
+                blingImageSyncService,
                 blingClient,
                 transactionManager,
                 "https://bling.example/authorize",

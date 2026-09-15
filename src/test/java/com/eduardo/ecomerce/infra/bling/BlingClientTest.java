@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
-
 class BlingClientTest {
 
     private MockWebServer server;
@@ -27,7 +26,7 @@ class BlingClientTest {
         server = new MockWebServer();
         server.start();
         AppRestClientFactory factory = new AppRestClientFactory(500, 100);
-        client = new BlingClient(factory, server.url("/").toString(), new ObjectMapper());
+        client = new BlingClient(factory, new BlingRequestThrottler(), server.url("/").toString(), new ObjectMapper());
     }
 
     @AfterEach
