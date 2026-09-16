@@ -7,6 +7,7 @@ import com.eduardo.ecomerce.domain.order.*;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
 import com.eduardo.ecomerce.domain.productvariant.*;
 import com.eduardo.ecomerce.domain.user.UserRepository;
+import com.eduardo.ecomerce.email.EmailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,12 +35,16 @@ class OrderServiceExpirationTest {
     @Mock ShippingService shippingService;
     @Mock TransactionTemplate transactionTemplate;
     @Mock TransactionStatus transactionStatus;
+
+    @Mock
+    EmailService emailService;
     OrderService service;
+
 
     @BeforeEach
     void setUp() {
         service = spy(new OrderService(orderRepository, cartRepository, cartItemRepository, userRepository,
-                productVariantRepository, addressRepository, shippingService, transactionTemplate));
+                productVariantRepository, addressRepository, shippingService, transactionTemplate, emailService));
         lenient().doAnswer(inv -> ((TransactionCallback<?>) inv.getArgument(0))
                 .doInTransaction(transactionStatus)).when(transactionTemplate).execute(any());
     }

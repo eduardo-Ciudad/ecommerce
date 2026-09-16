@@ -18,9 +18,11 @@ import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
 import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
+import com.eduardo.ecomerce.email.EmailService;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,6 +39,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,6 +69,9 @@ class OrderServiceTest {
 
     @Mock
     private TransactionTemplate transactionTemplate;
+
+    @Mock
+    private EmailService emailService;
 
     @InjectMocks
     private OrderService orderService;
@@ -349,5 +355,73 @@ class OrderServiceTest {
         order.setStatus(OrderStatus.PENDING);
         order.setCreatedAt(LocalDateTime.now());
         return order;
+    }
+
+    @Test
+    void shouldSendNewOrderNotificationOnOrderCreation() {
+        UUID userId = UUID.randomUUID();
+        UUID cartId = UUID.randomUUID();
+        UUID addressId = UUID.randomUUID();
+
+        User user = new User();
+        user.setId(userId);
+        user.setName("Eduardo");
+        user.setEmail("eduardo@example.com");
+        user.setEmailVerified(true);
+
+        Cart cart = new Cart();
+        cart.setId(cartId);
+        cart.setUser(user);
+
+        Product product = new Product();
+        product.setName("Vestido Rosa");
+
+        ProductVariant variant = new ProductVariant();
+        variant.setId(UUID.randomUUID());
+        variant.setProduct(product);
+        variant.setSize("P");
+        variant.setPrice(new BigDecimal("29.90"));
+        variant.setStock(10);
+
+        CartItem cartItem = new CartItem();
+        cartItem.setCart(cart);
+        cartItem.setVariant(variant);
+        cartItem.setQuantity(2);
+
+        Address a = buildAddress(addressId);
+        CreateOrderInput orderInput = new CreateOrderInput(addressId, "PAC");
+        ShippingOutput shipping = new ShippingOutput("PAC", "PAC", new BigDecimal("15.00"), 7);
+
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(cartItem));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(addressRepository.findByIdAndUserId(addressId, userId)).thenReturn(Optional.of(a));
+        when(shippingService.calculateByMethod(a.getCep(), orderInput.shippingMethod())).thenReturn(shipping);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        orderService.create(userId, orderInput);
+
+        ArgumentCaptor<OrderOutput> outputCaptor = ArgumentCaptor.forClass(OrderOutput.class);
+        verify(emailService).sendNewOrderNotification(outputCaptor.capture(), eq("eduardo@example.com"));
+        assertThat(outputCaptor.getValue().total()).isEqualByComparingTo(new BigDecimal("74.80"));
+
+    }
+
+    @Test
+    void shouldNotSendNotificationWhenCartIsEmpty() {
+        UUID userId = UUID.randomUUID();
+        UUID cartId = UUID.randomUUID();
+
+        Cart cart = new Cart();
+        cart.setId(cartId);
+
+        CreateOrderInput orderInput = new CreateOrderInput(UUID.randomUUID(), "PAC");
+
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of());
+
+        assertThrows(BusinessException.class, () -> orderService.create(userId, orderInput));
+
+        verify(emailService, org.mockito.Mockito.never()).sendNewOrderNotification(any(), any());
     }
 }
