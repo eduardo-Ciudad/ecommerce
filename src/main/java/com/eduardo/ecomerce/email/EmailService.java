@@ -1,5 +1,7 @@
 package com.eduardo.ecomerce.email;
 
+import com.eduardo.ecomerce.dto.output.order.OrderOutput;
+import com.eduardo.ecomerce.dto.output.orderitem.OrderItemOutput;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +22,9 @@ public class EmailService {
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
+
+    @Value("${app.admin-email}")
+    private String adminEmail;
 
     @Async
     public void sendPasswordChangeEmail(String recipient, String token) {
@@ -95,4 +100,41 @@ public class EmailService {
             log.error("Erro ao enviar email de verificação para {}: {}", recipient, e.getMessage());
         }
     }
+
+    @Async
+    public void sendNewOrderNotification(OrderOutput order, String customerEmail) {
+        try {
+            StringBuilder itemsText = new StringBuilder();
+            for (OrderItemOutput item : order.items()) {
+                itemsText.append("- ")
+                        .append(item.productName())
+                        .append(" (tam. ").append(item.size()).append(") x")
+                        .append(item.quantity())
+                        .append(" — R$ ").append(item.unitPrice())
+                        .append("\n");
+        }
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(sender);
+            message.setTo(adminEmail);
+            message.setSubject("Novo pedido recebido — GabiKids");
+            message.setText(
+                    "Um novo pedido foi realizado!\n\n" +
+                            "Pedido: " + order.id() + "\n" +
+                            "Cliente: " + order.recipientName() + " (" + customerEmail + ")\n" +
+                            "Total: R$ " + order.total() + "\n\n" +
+                            "Itens:\n" + itemsText +
+                            "\nEndereço de entrega:\n" +
+                            order.recipientStreet() + ", " + order.recipientNumber() +
+                            " - " + order.recipientNeighborhood() + "\n" +
+                            order.recipientCity() + "/" + order.recipientState() +
+                            " - CEP " + order.recipientCep()
+            );
+
+            mailSender.send(message);
+            log.info("Email de novo pedido enviado — orderId: {}", order.id());
+        } catch (Exception e) {
+            log.error("Erro ao enviar email de novo pedido — orderId: {}: {}", order.id(), e.getMessage());
+        }
+    }
+
 }
