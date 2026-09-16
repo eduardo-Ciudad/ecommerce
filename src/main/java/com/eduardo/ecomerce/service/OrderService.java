@@ -19,6 +19,7 @@ import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
 import com.eduardo.ecomerce.dto.output.orderitem.OrderItemOutput;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
+import com.eduardo.ecomerce.email.EmailService;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +47,7 @@ public class OrderService {
     private final AddressRepository addressRepository;
     private final ShippingService shippingService;
     private final TransactionTemplate transactionTemplate;
+    private final EmailService emailService;
 
     public record ExpiringOrderSnapshot(UUID orderId, String paymentId, BigDecimal total) {}
 
@@ -121,7 +123,9 @@ public class OrderService {
 
         cartItemRepository.deleteByCartId(cart.getId());
 
-        return toOutput(order);
+        OrderOutput output = toOutput(order);
+        emailService.sendNewOrderNotification(output, user.getEmail());
+        return output;
     }
 
     public PageResponse<OrderOutput> findByUserId(UUID userId, Pageable pageable) {
