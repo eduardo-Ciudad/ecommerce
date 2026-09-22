@@ -45,7 +45,7 @@ class EmailServiceTest {
         ReflectionTestUtils.setField(emailService, "adminEmail", "contato.gabikids@gmail.com");
 
         OrderItemOutput item = new OrderItemOutput(
-                UUID.randomUUID(), UUID.randomUUID(), "Vestido Rosa", "P", 2, new BigDecimal("29.90"));
+                UUID.randomUUID(), UUID.randomUUID(), "Vestido Rosa", "P", null, 2, new BigDecimal("29.90"));
 
         order = new OrderOutput(
                 UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("74.80"),
@@ -73,7 +73,31 @@ class EmailServiceTest {
                 .contains("Maria Silva")
                 .contains("maria@example.com")
                 .contains("Vestido Rosa")
-                .contains("74.80");
+                .contains("74.80")
+                .contains("Vestido Rosa (tam. P) x2");
+    }
+
+
+
+    @Test
+    void shouldIncludeColorInEmailWhenVariantHasColor() {
+        OrderItemOutput coloredItem = new OrderItemOutput(
+                UUID.randomUUID(), UUID.randomUUID(), "Short Moletinho", "4", "Rosa Neon", 1, new BigDecimal("34.99"));
+        OrderOutput coloredOrder = new OrderOutput(
+                UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("49.99"),
+                OrderStatus.PENDING, null, null,
+                "PAC", new BigDecimal("15.00"), 7,
+                "Maria Silva", "15046-806", "Rua Teste", "100", null,
+                "Centro", "Rio Preto", "SP",
+                List.of(coloredItem), LocalDateTime.now()
+        );
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+
+        emailService.sendNewOrderNotification(coloredOrder, "maria@example.com");
+
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText())
+                .contains("Short Moletinho (tam. 4, cor Rosa Neon) x1");
     }
 
     @Test
