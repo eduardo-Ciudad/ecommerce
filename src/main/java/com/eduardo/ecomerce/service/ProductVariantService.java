@@ -29,6 +29,7 @@ public class ProductVariantService {
         ProductVariant variant = new ProductVariant();
         variant.setProduct(product);
         variant.setSize(input.size());
+        variant.setColor(normalizeColor(input.color()));
         variant.setPrice(input.price());
         variant.setStock(input.stock());
         productVariantRepository.save(variant);
@@ -41,6 +42,9 @@ public class ProductVariantService {
         ProductVariant variant = productVariantRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Variante não encontrada"));
         variant.setSize(input.size());
+        if (input.color() != null) {
+            variant.setColor(normalizeColor(input.color()));
+        }
         variant.setPrice(input.price());
         variant.setStock(input.stock());
         productVariantRepository.save(variant);
@@ -55,6 +59,13 @@ public class ProductVariantService {
         }
         productVariantRepository.deleteById(id);
         log.info("Variante removida — id: {}", id);
+    }
+
+    private String normalizeColor(String color) {
+        if (color == null || color.isBlank()) {
+            return null;
+        }
+        return color.trim();
     }
 
     private ProductVariantOutput toOutput(ProductVariant variant) {

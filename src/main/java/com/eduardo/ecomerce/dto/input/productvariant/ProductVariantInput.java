@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 
 public record ProductVariantInput(
         @NotBlank @Size(max = 5) String size,
+        @Size(max = 100) String color,
         @NotNull @DecimalMin("0.01") BigDecimal price,
         @NotNull @Min(0) Integer stock
 ) {
