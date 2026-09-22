@@ -7,6 +7,7 @@ import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
 import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
+import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.SizeRange;
 import com.eduardo.ecomerce.dto.input.product.ProductInput;
 import com.eduardo.ecomerce.dto.output.product.ProductOutput;
@@ -214,5 +215,34 @@ class ProductServiceTest {
         productService.findAllActive(pageable, false, null, null, null, "   ");
 
         verify(productRepository).search(isNull(), eq(false), isNull(), isNull(), isNull(), eq(pageable));
+    }
+
+    @Test
+    void findByIdReturnsVariantColorAndSize() {
+        UUID productId = UUID.randomUUID();
+        Category category = new Category();
+        category.setId(UUID.randomUUID());
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setName("Short Moletinho");
+        product.setCategory(category);
+        product.setActive(true);
+
+        ProductVariant variant = new ProductVariant();
+        variant.setProduct(product);
+        variant.setSize("4");
+        variant.setColor("Rosa Neon");
+        variant.setPrice(new java.math.BigDecimal("34.99"));
+        variant.setStock(2);
+        product.getVariants().add(variant);
+
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+
+        ProductOutput output = productService.findById(productId);
+
+        assertThat(output.variants()).hasSize(1);
+        assertThat(output.variants().get(0).size()).isEqualTo("4");
+        assertThat(output.variants().get(0).color()).isEqualTo("Rosa Neon");
     }
 }
