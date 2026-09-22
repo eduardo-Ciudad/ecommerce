@@ -425,7 +425,7 @@ public class BlingService {
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
-        String size = extractSize(detail);
+        VariationAttributes attributes = extractVariationAttributes(detail);
         String description = extractDescription(detail);
 
         if (blingCategoryId == null) {
@@ -467,7 +467,7 @@ public class BlingService {
                 syncProductMedia(product, detail, uploadedImages);
             }
 
-            upsertVariant(product, item.id(), item.sku(), item.price(), stock, size);
+            upsertVariant(product, item.id(), item.sku(), item.price(), stock, attributes.size(), attributes.color());
             return true;
         }));
     }
@@ -509,7 +509,7 @@ public class BlingService {
 
             syncProductMedia(product, detail, uploadedImages);
 
-            upsertVariant(product, null, item.sku(), item.price(), stock, null);
+            upsertVariant(product, null, item.sku(), item.price(), stock, null, null);
             return true;
         }));
     }
@@ -582,7 +582,8 @@ public class BlingService {
     }
 
 
-    private void upsertVariant(Product product, Long blingVariationId, String sku, BigDecimal price, Integer stock, String size) {
+    private void upsertVariant(Product product, Long blingVariationId, String sku, BigDecimal price,
+                               Integer stock, String size, String color) {
         ProductVariant variant = findExistingVariant(blingVariationId, sku)
                 .orElseGet(ProductVariant::new);
 
@@ -592,6 +593,7 @@ public class BlingService {
         variant.setPrice(price);
         variant.setStock(stock);
         variant.setSize(size);
+        variant.setColor(color);
 
         productVariantRepository.save(variant);
     }
@@ -644,6 +646,60 @@ public class BlingService {
         }
 
         return size;
+    }    private VariationAttributes extractVariationAttributes(JsonNode detail) {
+        JsonNode nome = detail.path("data").path("variacao").path("nome");
+        if (nome.isMissingNode() || nome.isNull() || nome.asText().isBlank()) {
+            return VariationAttributes.EMPTY;
+        }
+
+        String raw = nome.asText(); // ex: "tamanho:10", "Cor:Cinza;Tamanho:4"
+        Map<String, String> attributes = parseVariationName(raw);
+
+        String size = limitLength(attributes.get("tamanho"), "tamanho");
+        String color = limitLength(attributes.get("cor"), "cor");
+
+        if (size == null && color == null) {
+            log.warn("Variação do Bling sem atributo de tamanho ou cor reconhecido: \"{}\"", raw);
+        }
+
+        return new VariationAttributes(size, color);
+    }
+
+    private Map<String, String> parseVariationName(String raw) {
+        Map<String, String> attributes = new HashMap<>();
+
+        for (String segment : raw.split(";")) {
+            int colonIndex = segment.indexOf(':');
+            if (colonIndex < 0) {
+                continue;
+            }
+
+            String key = normalizeAttributeKey(segment.substring(0, colonIndex));
+            String value = segment.substring(colonIndex + 1).trim();
+
+            if (!key.isEmpty() && !value.isEmpty()) {
+                attributes.putIfAbsent(key, value);
+            }
+        }
+
+        return attributes;
+    }
+
+    private String normalizeAttributeKey(String key) {
+        String withoutAccents = java.text.Normalizer.normalize(key.trim(), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        return withoutAccents.toLowerCase(Locale.ROOT);
+    }
+
+    private String limitLength(String value, String attributeName) {
+        if (value == null) {
+            return null;
+        }
+        if (value.length() > MAX_SIZE_LENGTH) {
+            log.warn("Valor de {} excede {} caracteres, truncando: \"{}\"", attributeName, MAX_SIZE_LENGTH, value);
+            return value.substring(0, MAX_SIZE_LENGTH);
+        }
+        return value;
     }
 
     private BlingToken saveToken(JsonNode response) {
@@ -831,6 +887,10 @@ public class BlingService {
         }
 
         return specifications;
+    }
+
+    private record VariationAttributes(String size, String color) {
+        static final VariationAttributes EMPTY = new VariationAttributes(null, null);
     }
 
 }

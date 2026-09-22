@@ -9,6 +9,7 @@ import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productimage.ImageSource;
 import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
 import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
+import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -29,6 +31,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.util.Arrays.sizeOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -145,6 +148,101 @@ class BlingServiceTest {
         assertThat(existing.getImageUrl()).isNull();
         verify(productImageRepository).deleteByProductIdAndSource(existing.getId(), ImageSource.BLING);
         verify(productRepository).save(existing);
+    }
+
+
+    @Test
+    void extractVariationAttributesReadsColorAndSizeWhenColorComesFirst() throws Exception {
+        Object attributes = extractVariationAttributes("Cor:Preto;Tamanho:4");
+
+        assertThat(sizeOf(attributes)).isEqualTo("4");
+        assertThat(colorOf(attributes)).isEqualTo("Preto");
+    }
+
+    @Test
+    void extractVariationAttributesReadsSizeOnlyVariationWithoutColor() throws Exception {
+        Object attributes = extractVariationAttributes("tamanho:10");
+
+        assertThat(sizeOf(attributes)).isEqualTo("10");
+        assertThat(colorOf(attributes)).isNull();
+    }
+
+    @Test
+    void extractVariationAttributesIgnoresCaseAndAccentsInKeysButPreservesValues() throws Exception {
+        Object attributes = extractVariationAttributes("TAMANHO: 6 ;Côr: Rosa Neon ");
+
+        assertThat(sizeOf(attributes)).isEqualTo("6");
+        assertThat(colorOf(attributes)).isEqualTo("Rosa Neon");
+    }
+
+    @Test
+    void extractVariationAttributesIgnoresUnknownAttributesAndColonsInsideValues() throws Exception {
+        Object attributes = extractVariationAttributes("Estampa:Dino:Azul;Tamanho:8");
+
+        assertThat(sizeOf(attributes)).isEqualTo("8");
+        assertThat(colorOf(attributes)).isNull();
+    }
+
+    @Test
+    void extractVariationAttributesReturnsEmptyWhenVariationIsMissing() throws Exception {
+        Object attributes = ReflectionTestUtils.invokeMethod(service, "extractVariationAttributes",
+                json("{\"data\":{}}"));
+
+        assertThat(sizeOf(attributes)).isNull();
+        assertThat(colorOf(attributes)).isNull();
+    }
+
+    @Test
+    void syncProductsPersistsColorAndSizeOnVariantFromBlingVariation() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = new Category();
+        category.setBlingCategoryId(77L);
+
+        when(blingClient.listProducts("token", 1)).thenReturn(json("""
+            {"data":[
+              {"id":500,"nome":"Short Moletinho","codigo":"PAI-500","preco":"34.99","formato":"V"},
+              {"id":501,"nome":"Short Moletinho Preto 4","codigo":"SKU-501","preco":"34.99","formato":"S","idProdutoPai":500}
+            ]}
+            """));
+        when(blingClient.listProducts("token", 2)).thenReturn(json("""
+            {"data":[]}
+            """));
+        when(blingClient.getProductById("token", 501L)).thenReturn(json("""
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":3},
+            "variacao":{"nome":"Cor:Preto;Tamanho:4"}}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(500L)).thenReturn(Optional.empty());
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productVariantRepository.findByBlingVariationId(501L)).thenReturn(Optional.empty());
+        when(productVariantRepository.findBySku("SKU-501")).thenReturn(Optional.empty());
+
+        service.syncProducts();
+
+        ArgumentCaptor<ProductVariant> captor = ArgumentCaptor.forClass(ProductVariant.class);
+        verify(productVariantRepository).save(captor.capture());
+        ProductVariant saved = captor.getValue();
+        assertThat(saved.getSize()).isEqualTo("4");
+        assertThat(saved.getColor()).isEqualTo("Preto");
+        assertThat(saved.getBlingVariationId()).isEqualTo(501L);
+        assertThat(saved.getStock()).isEqualTo(3);
+    }
+
+    private Object extractVariationAttributes(String variationName) {
+        JsonNode detail = objectMapper.createObjectNode()
+                .set("data", objectMapper.createObjectNode()
+                        .set("variacao", objectMapper.createObjectNode().put("nome", variationName)));
+        return ReflectionTestUtils.invokeMethod(service, "extractVariationAttributes", detail);
+    }
+
+    private String sizeOf(Object attributes) {
+        return ReflectionTestUtils.invokeMethod(attributes, "size");
+    }
+
+    private String colorOf(Object attributes) {
+        return ReflectionTestUtils.invokeMethod(attributes, "color");
     }
 
     private void validToken() {
