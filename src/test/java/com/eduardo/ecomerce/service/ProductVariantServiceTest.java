@@ -38,7 +38,7 @@ class ProductVariantServiceTest {
     @Test
     void shouldCreateVariantSuccessfully() {
         UUID productId = UUID.randomUUID();
-        ProductVariantInput input = new ProductVariantInput("P", new BigDecimal("29.90"), 10);
+        ProductVariantInput input = new ProductVariantInput("P", null, new BigDecimal("29.90"), 10);
 
         Product product = new Product();
         product.setId(productId);
@@ -65,11 +65,56 @@ class ProductVariantServiceTest {
     @Test
     void shouldThrowWhenProductNotFound() {
         UUID productId = UUID.randomUUID();
-        ProductVariantInput input = new ProductVariantInput("M", new BigDecimal("35.00"), 5);
+        ProductVariantInput input = new ProductVariantInput("M", null, new BigDecimal("35.00"), 5);
 
         when(productRepository.findById(productId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,
                 () -> productVariantService.create(productId, input));
+    }
+
+    @Test
+    void createTrimsColorFromInput() {
+        UUID productId = UUID.randomUUID();
+        Product product = new Product();
+        product.setId(productId);
+        ProductVariantInput input = new ProductVariantInput("4", "  Rosa Neon ", new BigDecimal("34.99"), 2);
+
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+
+        ProductVariantOutput output = productVariantService.create(productId, input);
+
+        assertThat(output.color()).isEqualTo("Rosa Neon");
+    }
+
+    @Test
+    void updateKeepsExistingColorWhenInputColorIsNull() {
+        UUID variantId = UUID.randomUUID();
+        ProductVariant existing = new ProductVariant();
+        existing.setId(variantId);
+        existing.setColor("Preto");
+        ProductVariantInput input = new ProductVariantInput("6", null, new BigDecimal("39.90"), 7);
+
+        when(productVariantRepository.findById(variantId)).thenReturn(Optional.of(existing));
+
+        ProductVariantOutput output = productVariantService.update(variantId, input);
+
+        assertThat(output.color()).isEqualTo("Preto");
+        assertThat(output.stock()).isEqualTo(7);
+    }
+
+    @Test
+    void updateClearsColorWhenInputColorIsBlank() {
+        UUID variantId = UUID.randomUUID();
+        ProductVariant existing = new ProductVariant();
+        existing.setId(variantId);
+        existing.setColor("Preto");
+        ProductVariantInput input = new ProductVariantInput("6", "   ", new BigDecimal("39.90"), 7);
+
+        when(productVariantRepository.findById(variantId)).thenReturn(Optional.of(existing));
+
+        ProductVariantOutput output = productVariantService.update(variantId, input);
+
+        assertThat(output.color()).isNull();
     }
 }
