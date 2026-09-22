@@ -10,6 +10,9 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -108,11 +111,12 @@ public class EmailService {
             for (OrderItemOutput item : order.items()) {
                 itemsText.append("- ")
                         .append(item.productName())
-                        .append(" (tam. ").append(item.size()).append(") x")
+                        .append(describeVariant(item))
+                        .append(" x")
                         .append(item.quantity())
                         .append(" — R$ ").append(item.unitPrice())
                         .append("\n");
-        }
+            }
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(sender);
             message.setTo(adminEmail);
@@ -135,6 +139,17 @@ public class EmailService {
         } catch (Exception e) {
             log.error("Erro ao enviar email de novo pedido — orderId: {}: {}", order.id(), e.getMessage());
         }
+    }
+
+    private String describeVariant(OrderItemOutput item) {
+        List<String> parts = new ArrayList<>();
+        if (item.size() != null && !item.size().isBlank()) {
+            parts.add("tam. " + item.size());
+        }
+        if (item.color() != null && !item.color().isBlank()) {
+            parts.add("cor " + item.color());
+        }
+        return parts.isEmpty() ? "" : " (" + String.join(", ", parts) + ")";
     }
 
 }

@@ -270,6 +270,7 @@ public class OrderService {
                         item.getVariant().getId(),
                         item.getVariant().getProduct().getName(),
                         item.getVariant().getSize(),
+                        item.getVariant().getColor(),
                         item.getQuantity(),
                         item.getUnitPrice()
                 ))

@@ -8,6 +8,7 @@ public record OrderItemOutput(
         UUID variantId,
         String productName,
         String size,
+        String color,
         Integer quantity,
         BigDecimal unitPrice
 ) {
