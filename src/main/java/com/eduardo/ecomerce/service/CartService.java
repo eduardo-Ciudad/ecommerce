@@ -135,6 +135,7 @@ public class CartService {
                         item.getVariant().getProduct().getName(),
                         item.getVariant().getProduct().getImageUrl(),
                         item.getVariant().getSize(),
+                        item.getVariant().getColor(),
                         item.getVariant().getPrice(),
                         item.getQuantity()
                 ))

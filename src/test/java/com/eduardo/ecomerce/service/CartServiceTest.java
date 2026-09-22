@@ -60,6 +60,7 @@ class CartServiceTest {
         variant.setId(variantId);
         variant.setProduct(product);
         variant.setSize("M");
+        variant.setColor("Preto");
         variant.setPrice(new BigDecimal("29.90"));
         variant.setStock(10);
 
@@ -87,6 +88,8 @@ class CartServiceTest {
 
         assertThat(output.items()).hasSize(1);
         assertThat(output.items().get(0).quantity()).isEqualTo(2);
+        assertThat(output.items().get(0).size()).isEqualTo("M");
+        assertThat(output.items().get(0).color()).isEqualTo("Preto");
     }
 
     @Test

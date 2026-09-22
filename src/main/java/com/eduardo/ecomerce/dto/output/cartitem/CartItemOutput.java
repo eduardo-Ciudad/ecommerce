@@ -9,6 +9,7 @@ public record CartItemOutput(
         String productName,
         String imageUrl,
         String size,
+        String color,
         BigDecimal price,
         Integer quantity
 ) {
