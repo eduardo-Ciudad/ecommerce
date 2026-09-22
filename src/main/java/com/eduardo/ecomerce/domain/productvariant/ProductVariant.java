@@ -28,6 +28,9 @@ public class ProductVariant {
     @Column(length = 100)
     private String size;
 
+    @Column(length = 100)
+    private String color;
+
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
 
