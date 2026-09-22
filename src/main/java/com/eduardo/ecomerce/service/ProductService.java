@@ -127,7 +127,7 @@ public class ProductService {
 
     private ProductOutput toOutput(Product product) {
         List<ProductVariantOutput> variants = product.getVariants().stream()
-                .map(v -> new ProductVariantOutput(v.getId(), v.getSize(), v.getPrice(), v.getStock(), v.getCreatedAt()))
+                .map(v -> new ProductVariantOutput(v.getId(), v.getSize(), v.getColor(), v.getPrice(), v.getStock(), v.getCreatedAt()))
                 .toList();
 
         List<ProductImageOutput> images = productImageRepository

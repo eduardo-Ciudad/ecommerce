@@ -7,6 +7,7 @@ import java.util.UUID;
 public record ProductVariantOutput(
         UUID id,
         String size,
+        String color,
         BigDecimal price,
         Integer stock,
         LocalDateTime createdAt

@@ -61,6 +61,7 @@ public class ProductVariantService {
         return new ProductVariantOutput(
                 variant.getId(),
                 variant.getSize(),
+                variant.getColor(),
                 variant.getPrice(),
                 variant.getStock(),
                 variant.getCreatedAt()
