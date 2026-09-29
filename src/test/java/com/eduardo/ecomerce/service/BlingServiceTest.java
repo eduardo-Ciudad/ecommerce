@@ -256,4 +256,37 @@ class BlingServiceTest {
     private JsonNode json(String value) throws Exception {
         return objectMapper.readTree(value);
     }
+
+    @Test
+    void isValidGtinAcceptsRealGtinsOfEveryLength() {
+        assertThat(BlingService.isValidGtin("7900257197337")).isTrue();  // EAN-13 real (Brandili)
+        assertThat(BlingService.isValidGtin("96385074")).isTrue();       // GTIN-8
+        assertThat(BlingService.isValidGtin("036000291452")).isTrue();   // UPC-12
+        assertThat(BlingService.isValidGtin("00012345600012")).isTrue(); // GTIN-14
+    }
+
+    @Test
+    void isValidGtinRejectsWrongCheckDigitGarbageAndZeros() {
+        assertThat(BlingService.isValidGtin("7900257197338")).isFalse(); // dígito verificador errado
+        assertThat(BlingService.isValidGtin("")).isFalse();
+        assertThat(BlingService.isValidGtin("123456")).isFalse();        // tamanho inválido
+        assertThat(BlingService.isValidGtin("0000000000000")).isFalse();
+        assertThat(BlingService.isValidGtin(null)).isFalse();
+    }
+
+    @Test
+    void extractGtinStripsWhitespaceAndReturnsNullWhenInvalidOrMissing() {
+        assertThat(extractGtin("\t7900257197337")).isEqualTo("7900257197337");
+        assertThat(extractGtin("SEM GTIN")).isNull();
+        assertThat(extractGtin("7900257197338")).isNull();
+
+        JsonNode semCampo = objectMapper.createObjectNode().set("data", objectMapper.createObjectNode());
+        assertThat((String) ReflectionTestUtils.invokeMethod(service, "extractGtin", semCampo)).isNull();
+    }
+
+    private String extractGtin(String gtin) {
+        JsonNode detail = objectMapper.createObjectNode()
+                .set("data", objectMapper.createObjectNode().put("gtin", gtin));
+        return ReflectionTestUtils.invokeMethod(service, "extractGtin", detail);
+    }
 }
