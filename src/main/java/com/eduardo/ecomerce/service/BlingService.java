@@ -425,6 +425,7 @@ public class BlingService {
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
+        String gtin = extractGtin(detail);
         VariationAttributes attributes = extractVariationAttributes(detail);
         String description = extractDescription(detail);
 
@@ -467,7 +468,8 @@ public class BlingService {
                 syncProductMedia(product, detail, uploadedImages);
             }
 
-            upsertVariant(product, item.id(), item.sku(), item.price(), stock, attributes.size(), attributes.color());
+            upsertVariant(product, item.id(), item.sku(), item.price(), stock,
+                    attributes.size(), attributes.color(), gtin);
             return true;
         }));
     }
@@ -477,6 +479,7 @@ public class BlingService {
 
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
+        String gtin = extractGtin(detail);
         String description = extractDescription(detail);
 
         if (blingCategoryId == null) {
@@ -509,7 +512,7 @@ public class BlingService {
 
             syncProductMedia(product, detail, uploadedImages);
 
-            upsertVariant(product, null, item.sku(), item.price(), stock, null, null);
+            upsertVariant(product, null, item.sku(), item.price(), stock, null, null, gtin);
             return true;
         }));
     }
@@ -583,7 +586,7 @@ public class BlingService {
 
 
     private void upsertVariant(Product product, Long blingVariationId, String sku, BigDecimal price,
-                               Integer stock, String size, String color) {
+                               Integer stock, String size, String color, String gtin) {
         ProductVariant variant = findExistingVariant(blingVariationId, sku)
                 .orElseGet(ProductVariant::new);
 
@@ -594,6 +597,7 @@ public class BlingService {
         variant.setStock(stock);
         variant.setSize(size);
         variant.setColor(color);
+        variant.setGtin(gtin);
 
         productVariantRepository.save(variant);
     }
