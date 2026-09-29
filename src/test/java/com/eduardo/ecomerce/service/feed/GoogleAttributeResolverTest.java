@@ -36,6 +36,16 @@ class GoogleAttributeResolverTest {
         assertThat(GoogleAttributeResolver.ageGroup("4", meninas)).isEqualTo("toddler");
         assertThat(GoogleAttributeResolver.ageGroup("6", meninas)).isEqualTo("kids");
         assertThat(GoogleAttributeResolver.ageGroup("16", meninas)).isEqualTo("kids");
+        assertThat(GoogleAttributeResolver.ageGroup("20", meninas)).isEqualTo("kids");
+        assertThat(GoogleAttributeResolver.ageGroup("2 - cod 276784", meninas)).isEqualTo("toddler");
+    }
+
+    @Test
+    void cleanSizeRemovesCodeSuffix() {
+        assertThat(GoogleAttributeResolver.cleanSize("P - cod 276816")).isEqualTo("P");
+        assertThat(GoogleAttributeResolver.cleanSize("2 - cod 276784")).isEqualTo("2");
+        assertThat(GoogleAttributeResolver.cleanSize("M bebê")).isEqualTo("M bebê");
+        assertThat(GoogleAttributeResolver.cleanSize(null)).isNull();
     }
 
     @Test
@@ -52,5 +62,10 @@ class GoogleAttributeResolverTest {
         assertThat(GoogleAttributeResolver.brand("", "Blusa Colorittà Floral")).isEqualTo("Colorittá");
         assertThat(GoogleAttributeResolver.brand(null, "Camiseta Listrada Off-White")).isNull();
         assertThat(GoogleAttributeResolver.brand(null, "Vestido Elianinha")).isNull();
+        assertThat(GoogleAttributeResolver.brand(null, "Blusa Infantil Menina Trick Nick Branca Cachorrinhos")).isEqualTo("Trick Nick");
+        assertThat(GoogleAttributeResolver.brand(null, "Blusa Juvenil H!ts Azul “You Decide” – Tam. 12")).isEqualTo("H!ts");
+        assertThat(GoogleAttributeResolver.brand(null, "Blusa Infantil Menina Rovi Kids Branca Believe")).isEqualTo("Rovi Kids");
+        assertThat(GoogleAttributeResolver.brand(null, "Blusa Infantil Brandili Active Rosa Pink Esportiva")).isEqualTo("Brandili");
+        assertThat(GoogleAttributeResolver.brand(null, "Blusa Infantil Forfun Preta Básica")).isEqualTo("Fakini");
     }
 }

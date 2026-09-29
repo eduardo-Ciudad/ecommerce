@@ -73,7 +73,7 @@ public class ProductVariantService {
                 variant.getId(),
                 variant.getSize(),
                 variant.getColor(),
-                variant.getGtin()g
+                variant.getGtin(),
                 variant.getPrice(),
                 variant.getStock(),
                 variant.getCreatedAt()

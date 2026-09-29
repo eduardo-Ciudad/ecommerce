@@ -4,6 +4,7 @@ import com.eduardo.ecomerce.domain.category.Category;
 import com.eduardo.ecomerce.domain.product.Brand;
 
 import java.text.Normalizer;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -21,6 +22,13 @@ public final class GoogleAttributeResolver {
 
     private static final Pattern NUMERIC_SIZE = Pattern.compile("\\d{1,2}");
     private static final Pattern MONTHS_SIZE = Pattern.compile("\\d{1,2}\\s*(m|mes|meses)");
+    private static final Pattern CODE_SUFFIX = Pattern.compile("\\s*-?\\s*c[oó]d\\.?\\s*\\d+.*$", Pattern.CASE_INSENSITIVE);
+
+
+    private static final List<String> EXTRA_NAME_BRANDS = List.of(
+            "Alakazoo", "H!ts", "Trick Nick", "Rovi Kids", "Rovitex", "Minty",
+            "Play Denim", "Alenice", "Milon"
+    );
 
     private GoogleAttributeResolver() {
     }
@@ -41,7 +49,7 @@ public final class GoogleAttributeResolver {
 
 
     public static String ageGroup(String size, Category category) {
-        String s = normalize(size);
+        String s = normalize(cleanSize(size));
         if (s != null) {
             if (s.equals("rn") || s.startsWith("rn ")) {
                 return AGE_NEWBORN;
@@ -74,13 +82,33 @@ public final class GoogleAttributeResolver {
         }
         for (Brand brand : Brand.values()) {
             for (String value : brand.getSpecificationValues()) {
-                String needle = normalize(value);
-                if (needle != null && Pattern.compile("\\b" + Pattern.quote(needle) + "\\b").matcher(name).find()) {
+                if (containsWord(name, value)) {
                     return brand.getDisplayName();
                 }
             }
         }
+        for (String brand : EXTRA_NAME_BRANDS) {
+            if (containsWord(name, brand)) {
+                return brand;
+            }
+        }
         return null;
+    }
+
+
+    public static String cleanSize(String size) {
+        if (size == null) {
+            return null;
+        }
+        String cleaned = CODE_SUFFIX.matcher(size).replaceAll("").trim();
+        return cleaned.isEmpty() ? null : cleaned;
+    }
+
+    private static boolean containsWord(String normalizedText, String word) {
+        String needle = normalize(word);
+        return needle != null
+                && Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(needle) + "(?![\\p{L}\\p{N}])")
+                .matcher(normalizedText).find();
     }
 
     static String rootName(Category category) {
