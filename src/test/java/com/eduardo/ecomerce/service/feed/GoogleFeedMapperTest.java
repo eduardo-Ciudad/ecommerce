@@ -91,4 +91,28 @@ class GoogleFeedMapperTest {
         ProductVariant withoutImage = variant("6", null, null, 1);
         assertThat(GoogleFeedMapper.toItem(withoutImage, List.of(), null, SITE)).isNull();
     }
+
+    @Test
+    void variantSizeReplacesSizeWrittenInProductName() {
+        assertThat(GoogleFeedMapper.joinTitle("Conjunto Bebê Trick Nick Rosa Encantada – Tam. M", "M bebê", null))
+                .isEqualTo("Conjunto Bebê Trick Nick Rosa Encantada – Tam. M bebê");
+        assertThat(GoogleFeedMapper.joinTitle("Vestido Infantil Kyly Estampa Safari – Tamanho 8", "8", null))
+                .isEqualTo("Vestido Infantil Kyly Estampa Safari – Tam. 8");
+        assertThat(GoogleFeedMapper.joinTitle("Conjunto Rovi Kids Ondas – Amarelo e Preto – Tam. 4 cod 296042", "4", null))
+                .isEqualTo("Conjunto Rovi Kids Ondas – Amarelo e Preto – Tam. 4");
+        assertThat(GoogleFeedMapper.joinTitle("Legging Brandili Glitter Preta – Tam. 4 ao 10", "8", null))
+                .isEqualTo("Legging Brandili Glitter Preta – Tam. 8");
+    }
+
+    @Test
+    void keepsSizeInNameWhenVariantHasNoSize() {
+        assertThat(GoogleFeedMapper.joinTitle("Vestido Brandili Baby Estampado Corações – Tam M", null, "goiaba"))
+                .isEqualTo("Vestido Brandili Baby Estampado Corações – Tam M – goiaba");
+    }
+
+    @Test
+    void removesEmojisFromTitleAndDescription() {
+        assertThat(GoogleFeedMapper.stripEmoji("Encantadores! 💖✨ Lindo")).isEqualTo("Encantadores! Lindo");
+        assertThat(GoogleFeedMapper.plainDescription("<p>Fofo 🌸 demais</p>", "x")).isEqualTo("Fofo demais");
+    }
 }
