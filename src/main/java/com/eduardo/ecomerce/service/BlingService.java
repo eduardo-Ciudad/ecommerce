@@ -893,4 +893,29 @@ public class BlingService {
         static final VariationAttributes EMPTY = new VariationAttributes(null, null);
     }
 
+    private String extractGtin(JsonNode detail) {
+        JsonNode node = detail.path("data").path("gtin");
+        if (node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        String digits = node.asText().replaceAll("\\D", "");
+        return isValidGtin(digits) ? digits : null;
+    }
+
+
+    static boolean isValidGtin(String digits) {
+        if (digits == null) return false;
+        int len = digits.length();
+        if (len != 8 && len != 12 && len != 13 && len != 14) return false;
+        if (digits.chars().allMatch(c -> c == '0')) return false;
+
+        int sum = 0;
+        for (int i = 0; i < len - 1; i++) {
+            int d = digits.charAt(len - 2 - i) - '0';
+            sum += (i % 2 == 0) ? d * 3 : d;
+        }
+        int check = (10 - (sum % 10)) % 10;
+        return check == digits.charAt(len - 1) - '0';
+    }
+
 }
