@@ -8,6 +8,7 @@ public record ProductVariantOutput(
         UUID id,
         String size,
         String color,
+        String gtin,
         BigDecimal price,
         Integer stock,
         LocalDateTime createdAt
