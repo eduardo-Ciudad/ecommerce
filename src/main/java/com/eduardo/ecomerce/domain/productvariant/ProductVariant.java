@@ -31,6 +31,9 @@ public class ProductVariant {
     @Column(length = 100)
     private String color;
 
+    @Column(length = 14)
+    private String gtin;
+
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
 
