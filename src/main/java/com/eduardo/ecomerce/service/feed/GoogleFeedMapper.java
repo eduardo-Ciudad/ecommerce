@@ -8,12 +8,19 @@ import org.jsoup.Jsoup;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
+
 
 public final class GoogleFeedMapper {
 
     static final int MAX_TITLE = 150;
     static final int MAX_DESCRIPTION = 5000;
     static final int MAX_ADDITIONAL_IMAGES = 10;
+
+    private static final Pattern NAME_SIZE_SUFFIX =
+            Pattern.compile("\\s*[–-]\\s*(tam\\.?|tamanho)\\s+.*$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern EMOJI =
+            Pattern.compile("[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}\\x{FE0F}\\x{200D}]");
 
     private GoogleFeedMapper() {
     }
@@ -39,6 +46,7 @@ public final class GoogleFeedMapper {
 
         String title = truncate(joinTitle(product.getName(), size, color), MAX_TITLE);
 
+
         return new GoogleFeedItem(
                 variant.getId().toString(),
                 product.getId().toString(),
@@ -62,7 +70,14 @@ public final class GoogleFeedMapper {
     }
 
     static String joinTitle(String name, String size, String color) {
-        StringBuilder title = new StringBuilder(name.trim());
+        String baseName = stripEmoji(name).trim();
+        if (size != null) {
+            String withoutSize = NAME_SIZE_SUFFIX.matcher(baseName).replaceAll("").trim();
+            if (!withoutSize.isEmpty()) {
+                baseName = withoutSize;
+            }
+        }
+        StringBuilder title = new StringBuilder(baseName);
         if (size != null) {
             title.append(" – Tam. ").append(size);
         }
@@ -76,7 +91,7 @@ public final class GoogleFeedMapper {
         if (description == null || description.isBlank()) {
             return fallback;
         }
-        String text = Jsoup.parse(description).text().replaceAll("\\s+", " ").trim();
+        String text = stripEmoji(Jsoup.parse(description).text()).replaceAll("\\s+", " ").trim();
         return text.isEmpty() ? fallback : text;
     }
 
@@ -86,6 +101,10 @@ public final class GoogleFeedMapper {
         }
         Category parent = category.getParent();
         return parent == null ? category.getName() : parent.getName() + " > " + category.getName();
+    }
+
+    static String stripEmoji(String value) {
+        return value == null ? null : EMOJI.matcher(value).replaceAll("").replaceAll("\\s{2,}", " ");
     }
 
     private static String truncate(String value, int max) {
