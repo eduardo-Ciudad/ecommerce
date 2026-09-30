@@ -31,6 +31,9 @@ public class ProductImage {
     @Column(name = "thumbnail_url", length = 500)
     private String thumbnailUrl;
 
+    @Column(length = 100)
+    private String color;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ImageSource source = ImageSource.MANUAL;
