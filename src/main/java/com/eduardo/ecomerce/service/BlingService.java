@@ -281,14 +281,13 @@ public class BlingService {
         List<ProductListItem> allItems = fetchAllProductListItems(tokenRef, maxPages);
         ClassifiedListItems classified = classifyListItems(allItems);
 
-        Set<Long> parentIdsWithMediaSynced = new HashSet<>();
-
+        MediaSyncState mediaState = new MediaSyncState();
         int variantsSynced = 0;
         int variantsSkipped = 0;
 
         for (ProductListItem item : classified.variantItems()) {
             try {
-                boolean synced = upsertProductFromVariation(tokenRef, item, classified.parentNames(), parentIdsWithMediaSynced);
+                boolean synced = upsertProductFromVariation(tokenRef, item, classified.parentNames(), mediaState);
                 if (synced) {
                     variantsSynced++;
                 } else {
@@ -419,7 +418,7 @@ public class BlingService {
             AtomicReference<String> tokenRef,
             ProductListItem item,
             Map<Long, String> parentNames,
-            Set<Long> parentIdsWithMediaSynced
+            MediaSyncState mediaState
     ) {
         JsonNode detail = callWithRetry(tokenRef, token -> blingClient.getProductById(token, item.id()));
 
@@ -453,25 +452,37 @@ public class BlingService {
             return false;
         }
 
-        boolean shouldSyncMedia = parentIdsWithMediaSynced.add(item.idProdutoPai());
-        List<BlingImageSyncService.UploadedImage> uploadedImages = shouldSyncMedia
-                ? uploadImagesFor(item.idProdutoPai(), detail)
-                : List.of();
+        Long parentId = item.idProdutoPai();
+        String color = attributes.color();
 
-        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-            Product product = resolveParentProduct(item.idProdutoPai(), item.id(), parentNome, category, description);
+        // tudo fora da transação: decidir o que é novo + baixar/subir pro R2
+        boolean resetMedia = mediaState.needsReset(parentId);
+        List<ExtractedImage> newImages = mediaState.filterNew(parentId, color, extractImages(detail));
+        int firstDisplayOrder = mediaState.nextDisplayOrder(parentId);
+        List<BlingImageSyncService.UploadedImage> uploadedImages =
+                uploadImagesFor(parentId, color, newImages, firstDisplayOrder);
+
+        boolean synced = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+            Product product = resolveParentProduct(parentId, item.id(), parentNome, category, description);
             if (product == null) {
                 return false;
             }
 
-            if (shouldSyncMedia) {
-                syncProductMedia(product, detail, uploadedImages);
+            if (resetMedia) {
+                resetProductMedia(product, detail);
             }
+            appendProductImages(product, uploadedImages, color);
 
             upsertVariant(product, item.id(), item.sku(), item.price(), stock,
-                    attributes.size(), attributes.color(), gtin);
+                    attributes.size(), color, gtin);
             return true;
         }));
+
+        // só marca como "feito" depois que a transação deu certo
+        if (synced) {
+            mediaState.commit(parentId, color, newImages);
+        }
+        return synced;
     }
 
     private boolean upsertProductSimples(AtomicReference<String> tokenRef, ProductListItem item) {
@@ -497,7 +508,8 @@ public class BlingService {
             return false;
         }
 
-        List<BlingImageSyncService.UploadedImage> uploadedImages = uploadImagesFor(item.id(), detail);
+        List<BlingImageSyncService.UploadedImage> uploadedImages =
+                uploadImagesFor(item.id(), null, extractImages(detail), 0);
 
         return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
             Product product = productRepository.findByBlingProductId(item.id()).orElseGet(Product::new);
@@ -510,25 +522,18 @@ public class BlingService {
             }
             product = productRepository.save(product);
 
-            syncProductMedia(product, detail, uploadedImages);
+            resetProductMedia(product, detail);
+            appendProductImages(product, uploadedImages, null);
 
             upsertVariant(product, null, item.sku(), item.price(), stock, null, null, gtin);
             return true;
         }));
     }
 
-    private void syncProductMedia(Product product, JsonNode detail, List<BlingImageSyncService.UploadedImage> uploadedImages) {
+    /** Roda uma vez por produto por sync: limpa imagens BLING, capa e refaz as especificações. */
+    private void resetProductMedia(Product product, JsonNode detail) {
         productImageRepository.deleteByProductIdAndSource(product.getId(), ImageSource.BLING);
-
-        for (BlingImageSyncService.UploadedImage image : uploadedImages) {
-            ProductImage productImage = new ProductImage();
-            productImage.setProduct(product);
-            productImage.setUrl(image.url());
-            productImage.setThumbnailUrl(image.thumbnailUrl());
-            productImage.setSource(ImageSource.BLING);
-            productImage.setDisplayOrder(image.displayOrder());
-            productImageRepository.save(productImage);
-        }
+        product.setImageUrl(null);
 
         List<ExtractedSpecification> specifications = extractSpecifications(detail);
         productSpecificationRepository.deleteByProductId(product.getId());
@@ -541,9 +546,24 @@ public class BlingService {
             productSpecification.setDisplayOrder(specification.displayOrder());
             productSpecificationRepository.save(productSpecification);
         }
+    }
 
-        String coverImageUrl = uploadedImages.isEmpty() ? null : uploadedImages.get(0).url();
-        product.setImageUrl(coverImageUrl);
+    /** Roda a cada variação: acrescenta as imagens novas daquela cor (sem apagar as das outras cores). */
+    private void appendProductImages(Product product, List<BlingImageSyncService.UploadedImage> uploadedImages, String color) {
+        for (BlingImageSyncService.UploadedImage image : uploadedImages) {
+            ProductImage productImage = new ProductImage();
+            productImage.setProduct(product);
+            productImage.setUrl(image.url());
+            productImage.setThumbnailUrl(image.thumbnailUrl());
+            productImage.setColor(color);
+            productImage.setSource(ImageSource.BLING);
+            productImage.setDisplayOrder(image.displayOrder());
+            productImageRepository.save(productImage);
+        }
+
+        if (product.getImageUrl() == null && !uploadedImages.isEmpty()) {
+            product.setImageUrl(uploadedImages.get(0).url());
+        }
     }
 
 
@@ -741,6 +761,53 @@ public class BlingService {
     private record ExtractedImage(String url, String thumbnailUrl, int displayOrder) {
     }
 
+    /**
+     * Estado das imagens durante UMA rodada de sync (nasce e morre dentro de syncProducts).
+     * - needsReset: só a 1ª variação de cada pai limpa as imagens BLING antigas
+     * - filterNew: descarta imagem que já entrou pra mesma cor (mesmo arquivo em tamanhos diferentes)
+     * - nextDisplayOrder: ordem contínua por produto, entre todas as cores
+     * Só é atualizado em commit(), depois da transação dar certo.
+     */
+    private static final class MediaSyncState {
+        private final Set<Long> resetParents = new HashSet<>();
+        private final Map<Long, Set<String>> importedImages = new HashMap<>();
+        private final Map<Long, Integer> nextDisplayOrder = new HashMap<>();
+
+        boolean needsReset(Long parentId) {
+            return !resetParents.contains(parentId);
+        }
+
+        List<ExtractedImage> filterNew(Long parentId, String color, List<ExtractedImage> images) {
+            Set<String> imported = importedImages.getOrDefault(parentId, Set.of());
+            Set<String> seenInThisBatch = new HashSet<>();
+            return images.stream()
+                    .filter(img -> {
+                        String key = imageKey(color, img.url());
+                        return !imported.contains(key) && seenInThisBatch.add(key);
+                    })
+                    .toList();
+        }
+
+        int nextDisplayOrder(Long parentId) {
+            return nextDisplayOrder.getOrDefault(parentId, 0);
+        }
+
+        void commit(Long parentId, String color, List<ExtractedImage> newImages) {
+            resetParents.add(parentId);
+            Set<String> keys = importedImages.computeIfAbsent(parentId, id -> new HashSet<>());
+            newImages.forEach(img -> keys.add(imageKey(color, img.url())));
+            nextDisplayOrder.merge(parentId, newImages.size(), Integer::sum);
+        }
+
+        /** Link do Bling é assinado (muda a query string), então compara só o caminho do arquivo. */
+        private static String imageKey(String color, String url) {
+            String normalizedColor = color == null ? "" : color.trim().toLowerCase(Locale.ROOT);
+            int queryStart = url.indexOf('?');
+            String path = queryStart >= 0 ? url.substring(0, queryStart) : url;
+            return normalizedColor + "|" + path;
+        }
+    }
+
     private record ExtractedSpecification(String name, String value, int displayOrder) {
     }
 
@@ -772,17 +839,18 @@ public class BlingService {
     }
 
 
-    private List<BlingImageSyncService.UploadedImage> uploadImagesFor(Long blingProductId, JsonNode detail) {
-        List<ExtractedImage> extracted = extractImages(detail);
-        if (extracted.isEmpty()) {
+    private List<BlingImageSyncService.UploadedImage> uploadImagesFor(
+            Long blingProductId, String color, List<ExtractedImage> images, int firstDisplayOrder) {
+        if (images.isEmpty()) {
             return List.of();
         }
 
-        List<BlingImageSyncService.SourceImage> sources = extracted.stream()
-                .map(img -> new BlingImageSyncService.SourceImage(img.url(), img.displayOrder()))
-                .toList();
+        List<BlingImageSyncService.SourceImage> sources = new ArrayList<>();
+        for (int i = 0; i < images.size(); i++) {
+            sources.add(new BlingImageSyncService.SourceImage(images.get(i).url(), firstDisplayOrder + i));
+        }
 
-        return blingImageSyncService.syncImages(blingProductId, sources);
+        return blingImageSyncService.syncImages(blingProductId, color, sources);
     }
 
 

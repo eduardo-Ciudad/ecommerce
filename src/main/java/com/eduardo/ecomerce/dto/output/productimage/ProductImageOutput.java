@@ -7,6 +7,7 @@ public record ProductImageOutput(
         UUID id,
         String url,
         String thumbnailUrl,
+        String color,
         Integer displayOrder,
         LocalDateTime createdAt
 ) {

@@ -7,6 +7,7 @@ import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productimage.ImageSource;
+import com.eduardo.ecomerce.domain.productimage.ProductImage;
 import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
 import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
@@ -288,5 +289,100 @@ class BlingServiceTest {
         JsonNode detail = objectMapper.createObjectNode()
                 .set("data", objectMapper.createObjectNode().put("gtin", gtin));
         return ReflectionTestUtils.invokeMethod(service, "extractGtin", detail);
+    }
+
+    @Test
+    void syncProductsKeepsOneGalleryPerColorAndResetsParentMediaOnlyOnce() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = new Category();
+        category.setBlingCategoryId(77L);
+        Product product = new Product();
+        product.setBlingProductId(500L);
+        product.setCategory(category);
+
+        when(blingClient.listProducts("token", 1)).thenReturn(json("""
+            {"data":[
+              {"id":500,"nome":"Short Moletinho","codigo":"PAI-500","preco":"34.99","formato":"V"},
+              {"id":501,"nome":"Short Preto 4","codigo":"SKU-501","preco":"34.99","formato":"S","idProdutoPai":500},
+              {"id":502,"nome":"Short Rosa 4","codigo":"SKU-502","preco":"34.99","formato":"S","idProdutoPai":500}
+            ]}
+            """));
+        when(blingClient.listProducts("token", 2)).thenReturn(json("""
+            {"data":[]}
+            """));
+        when(blingClient.getProductById("token", 501L)).thenReturn(json("""
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":3},
+            "variacao":{"nome":"Cor:Preto;Tamanho:4"},
+            "midia":{"imagens":{"internas":[{"link":"https://bling.example/preto.jpg?sig=1"}]}}}}
+            """));
+        when(blingClient.getProductById("token", 502L)).thenReturn(json("""
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":2},
+            "variacao":{"nome":"Cor:Rosa;Tamanho:4"},
+            "midia":{"imagens":{"internas":[{"link":"https://bling.example/rosa.jpg?sig=1"}]}}}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(500L)).thenReturn(Optional.of(product));
+        when(blingImageSyncService.syncImages(eq(500L), eq("Preto"), any())).thenReturn(List.of(
+                new BlingImageSyncService.UploadedImage("https://r2.example/preto.jpg", "https://r2.example/preto_thumb.jpg", 0)));
+        when(blingImageSyncService.syncImages(eq(500L), eq("Rosa"), any())).thenReturn(List.of(
+                new BlingImageSyncService.UploadedImage("https://r2.example/rosa.jpg", "https://r2.example/rosa_thumb.jpg", 1)));
+
+        service.syncProducts();
+
+        // Rosa continua a numeração depois do Preto
+        verify(blingImageSyncService).syncImages(500L, "Rosa",
+                List.of(new BlingImageSyncService.SourceImage("https://bling.example/rosa.jpg?sig=1", 1)));
+        // a 2ª cor NÃO apaga a galeria da 1ª
+        verify(productImageRepository, times(1)).deleteByProductIdAndSource(product.getId(), ImageSource.BLING);
+
+        ArgumentCaptor<ProductImage> captor = ArgumentCaptor.forClass(ProductImage.class);
+        verify(productImageRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(ProductImage::getColor).containsExactly("Preto", "Rosa");
+        assertThat(captor.getAllValues()).extracting(ProductImage::getDisplayOrder).containsExactly(0, 1);
+        assertThat(product.getImageUrl()).isEqualTo("https://r2.example/preto.jpg");
+    }
+
+    @Test
+    void syncProductsImportsSameImageOnlyOnceAcrossSizesOfSameColor() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = new Category();
+        category.setBlingCategoryId(77L);
+        Product product = new Product();
+        product.setBlingProductId(500L);
+        product.setCategory(category);
+
+        when(blingClient.listProducts("token", 1)).thenReturn(json("""
+            {"data":[
+              {"id":500,"nome":"Short Moletinho","codigo":"PAI-500","preco":"34.99","formato":"V"},
+              {"id":501,"nome":"Short Preto 4","codigo":"SKU-501","preco":"34.99","formato":"S","idProdutoPai":500},
+              {"id":502,"nome":"Short Preto 6","codigo":"SKU-502","preco":"34.99","formato":"S","idProdutoPai":500}
+            ]}
+            """));
+        when(blingClient.listProducts("token", 2)).thenReturn(json("""
+            {"data":[]}
+            """));
+        when(blingClient.getProductById("token", 501L)).thenReturn(json("""
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":3},
+            "variacao":{"nome":"Cor:Preto;Tamanho:4"},
+            "midia":{"imagens":{"internas":[{"link":"https://bling.example/preto.jpg?sig=A"}]}}}}
+            """));
+        when(blingClient.getProductById("token", 502L)).thenReturn(json("""
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":2},
+            "variacao":{"nome":"Cor:Preto;Tamanho:6"},
+            "midia":{"imagens":{"internas":[{"link":"https://bling.example/preto.jpg?sig=B"}]}}}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(500L)).thenReturn(Optional.of(product));
+        when(blingImageSyncService.syncImages(eq(500L), eq("Preto"), any())).thenReturn(List.of(
+                new BlingImageSyncService.UploadedImage("https://r2.example/preto.jpg", "https://r2.example/preto_thumb.jpg", 0)));
+
+        service.syncProducts();
+
+        verify(blingImageSyncService, times(1)).syncImages(eq(500L), eq("Preto"), any());
+        verify(productImageRepository, times(1)).save(any(ProductImage.class));
     }
 }

@@ -133,7 +133,8 @@ public class ProductService {
 
         List<ProductImageOutput> images = productImageRepository
                 .findByProductIdOrderByDisplayOrderAsc(product.getId()).stream()
-                .map(img -> new ProductImageOutput(img.getId(), img.getUrl(), img.getThumbnailUrl(), img.getDisplayOrder(), img.getCreatedAt()))
+                .map(img -> new ProductImageOutput(img.getId(), img.getUrl(), img.getThumbnailUrl(),
+                        img.getColor(), img.getDisplayOrder(), img.getCreatedAt()))
                 .toList();
 
         List<ProductSpecificationOutput> specifications = productSpecificationRepository
