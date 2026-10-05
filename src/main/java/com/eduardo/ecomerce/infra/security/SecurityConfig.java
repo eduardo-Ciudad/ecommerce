@@ -66,6 +66,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/categories/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/shipping/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/feeds/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/coupons/validate").authenticated()
 
                         // Documentação pública
                         .requestMatchers(
@@ -103,6 +104,10 @@ public class SecurityConfig {
 
                         // Administração do Bling
                         .requestMatchers("/bling/sync/**").hasRole("ADMIN")
+
+                        //cupon
+                        .requestMatchers("/coupons/**", "/coupons").hasRole("ADMIN")
+
 
                         // Demais endpoints exigem autenticação
                         .anyRequest().authenticated()

@@ -29,7 +29,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
             "/auth", 10,
             "/payments", 5,
             "/orders", 10,
-            "/cart", 30
+            "/cart", 30,
+            "/coupons", 10
     );
 
     private final Cache<String, Bucket> buckets = Caffeine.newBuilder()
