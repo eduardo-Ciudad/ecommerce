@@ -53,6 +53,12 @@ public class Order {
     @Column(name = "shipping_deadline_days")
     private Integer shippingDeadlineDays;
 
+    @Column(name = "coupon_code", length = 50)
+    private String couponCode;
+
+    @Column(name = "discount_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+
     @Column(name = "recipient_name", length = 100)
     private String recipientName;
 
