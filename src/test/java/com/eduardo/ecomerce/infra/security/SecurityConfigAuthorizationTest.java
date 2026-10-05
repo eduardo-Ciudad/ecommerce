@@ -108,7 +108,8 @@ class SecurityConfigAuthorizationTest {
                 com.eduardo.ecomerce.domain.order.OrderStatus.PENDING,
                 null, null, null, null, null,
                 null, null, null, null, null, null, null, null,
-                List.of(), java.time.LocalDateTime.now()
+                List.of(), java.time.LocalDateTime.now(),
+                null, java.math.BigDecimal.ZERO
         );
     }
 

@@ -40,11 +40,15 @@ class OrderServiceExpirationTest {
     EmailService emailService;
     OrderService service;
 
+    @Mock
+    CouponService couponService;
+
 
     @BeforeEach
     void setUp() {
         service = spy(new OrderService(orderRepository, cartRepository, cartItemRepository, userRepository,
-                productVariantRepository, addressRepository, shippingService, transactionTemplate, emailService));
+                productVariantRepository, addressRepository, shippingService, transactionTemplate, emailService,
+                couponService));
         lenient().doAnswer(inv -> ((TransactionCallback<?>) inv.getArgument(0))
                 .doInTransaction(transactionStatus)).when(transactionTemplate).execute(any());
     }

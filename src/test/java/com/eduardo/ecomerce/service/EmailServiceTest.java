@@ -53,7 +53,8 @@ class EmailServiceTest {
                 "PAC", new BigDecimal("15.00"), 7,
                 "Maria Silva", "15046-806", "Rua Teste", "100", null,
                 "Centro", "Rio Preto", "SP",
-                List.of(item), LocalDateTime.now()
+                List.of(item), LocalDateTime.now(),
+                null, BigDecimal.ZERO
         );
     }
 
@@ -89,7 +90,8 @@ class EmailServiceTest {
                 "PAC", new BigDecimal("15.00"), 7,
                 "Maria Silva", "15046-806", "Rua Teste", "100", null,
                 "Centro", "Rio Preto", "SP",
-                List.of(coloredItem), LocalDateTime.now()
+                List.of(coloredItem), LocalDateTime.now(),
+                null, BigDecimal.ZERO
         );
         ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
 

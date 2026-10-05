@@ -6,6 +6,7 @@ import com.eduardo.ecomerce.domain.cart.Cart;
 import com.eduardo.ecomerce.domain.cart.CartRepository;
 import com.eduardo.ecomerce.domain.cartitem.CartItem;
 import com.eduardo.ecomerce.domain.cartitem.CartItemRepository;
+import com.eduardo.ecomerce.domain.coupon.Coupon;
 import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
@@ -40,8 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -69,6 +69,9 @@ class OrderServiceTest {
 
     @Mock
     private TransactionTemplate transactionTemplate;
+
+    @Mock
+    private CouponService couponService;
 
     @Mock
     private EmailService emailService;
@@ -324,7 +327,7 @@ class OrderServiceTest {
 
         assertThrows(BusinessException.class, () -> orderService.create(userId, orderInput));
 
-        verify(addressRepository, org.mockito.Mockito.never()).findByIdAndUserId(any(), any());
+        verify(addressRepository, never()).findByIdAndUserId(any(), any());
     }
 
     @Test
@@ -422,6 +425,114 @@ class OrderServiceTest {
 
         assertThrows(BusinessException.class, () -> orderService.create(userId, orderInput));
 
-        verify(emailService, org.mockito.Mockito.never()).sendNewOrderNotification(any(), any());
+        verify(emailService, never()).sendNewOrderNotification(any(), any());
+    }
+
+    private UUID stubCheckoutWithCoupon(UUID addressId, String unitPrice, int quantity, String shippingPrice) {
+        UUID userId = UUID.randomUUID();
+        UUID cartId = UUID.randomUUID();
+
+        User user = new User();
+        user.setId(userId);
+        user.setName("Eduardo");
+        user.setEmail("eduardo@example.com");
+        user.setEmailVerified(true);
+
+        Cart cart = new Cart();
+        cart.setId(cartId);
+        cart.setUser(user);
+
+        Product product = new Product();
+        product.setName("Conjunto Verão");
+
+        ProductVariant variant = new ProductVariant();
+        variant.setId(UUID.randomUUID());
+        variant.setProduct(product);
+        variant.setSize("4");
+        variant.setPrice(new BigDecimal(unitPrice));
+        variant.setStock(10);
+
+        CartItem cartItem = new CartItem();
+        cartItem.setCart(cart);
+        cartItem.setVariant(variant);
+        cartItem.setQuantity(quantity);
+
+        Address a = buildAddress(addressId);
+        ShippingOutput shipping = new ShippingOutput("PAC", "PAC", new BigDecimal(shippingPrice), 7);
+
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartItemRepository.findByCartId(cartId)).thenReturn(List.of(cartItem));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(addressRepository.findByIdAndUserId(addressId, userId)).thenReturn(Optional.of(a));
+        when(shippingService.calculateByMethod(a.getCep(), "PAC")).thenReturn(shipping);
+
+        return userId;
+    }
+
+    @Test
+    void shouldApplyCouponDiscountOnProductsSubtotalOnly() {
+        UUID addressId = UUID.randomUUID();
+        UUID userId = stubCheckoutWithCoupon(addressId, "50.00", 2, "20.00");
+
+        Coupon coupon = new Coupon();
+        coupon.setCode("TESTE10");
+        coupon.setDiscountPercent(new BigDecimal("10.00"));
+
+        when(couponService.resolveActiveCoupon("teste10")).thenReturn(coupon);
+        when(couponService.calculateDiscount(any(), any())).thenCallRealMethod();
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderOutput output = orderService.create(userId, new CreateOrderInput(addressId, "PAC", "teste10"));
+
+        // subtotal 100,00 − 10% (10,00) + frete 20,00 = 110,00
+        verify(couponService).calculateDiscount(eq(new BigDecimal("100.00")), eq(new BigDecimal("10.00")));
+        assertThat(output.discountAmount()).isEqualByComparingTo("10.00");
+        assertThat(output.total()).isEqualByComparingTo("110.00");
+        assertThat(output.couponCode()).isEqualTo("TESTE10");
+        assertThat(output.shippingPrice()).isEqualByComparingTo("20.00");
+    }
+
+    @Test
+    void shouldIgnoreBlankCouponCode() {
+        UUID addressId = UUID.randomUUID();
+        UUID userId = stubCheckoutWithCoupon(addressId, "50.00", 2, "20.00");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderOutput output = orderService.create(userId, new CreateOrderInput(addressId, "PAC", "   "));
+
+        verify(couponService, never()).resolveActiveCoupon(any());
+        assertThat(output.couponCode()).isNull();
+        assertThat(output.discountAmount()).isEqualByComparingTo("0");
+        assertThat(output.total()).isEqualByComparingTo("120.00");
+    }
+
+    @Test
+    void shouldCreateOrderWithoutCouponWhenFieldIsNull() {
+        UUID addressId = UUID.randomUUID();
+        UUID userId = stubCheckoutWithCoupon(addressId, "50.00", 1, "15.00");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderOutput output = orderService.create(userId, new CreateOrderInput(addressId, "PAC"));
+
+        verify(couponService, never()).resolveActiveCoupon(any());
+        assertThat(output.discountAmount()).isEqualByComparingTo("0");
+        assertThat(output.total()).isEqualByComparingTo("65.00");
+    }
+
+    @Test
+    void shouldNotTouchStockOrSaveOrderWhenCouponIsInvalid() {
+        UUID addressId = UUID.randomUUID();
+        UUID userId = stubCheckoutWithCoupon(addressId, "50.00", 2, "20.00");
+        when(couponService.resolveActiveCoupon("errado"))
+                .thenThrow(new BusinessException("Cupom inválido ou expirado"));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> orderService.create(userId, new CreateOrderInput(addressId, "PAC", "errado")));
+
+        assertThat(ex.getMessage()).isEqualTo("Cupom inválido ou expirado");
+        verify(productVariantRepository, never()).save(any());
+        verify(orderRepository, never()).save(any());
+        verify(cartItemRepository, never()).deleteByCartId(any());
+        verify(emailService, never()).sendNewOrderNotification(any(), any());
     }
 }
