@@ -27,5 +27,7 @@ public record OrderOutput(
         String recipientCity,
         String recipientState,
         List<OrderItemOutput> items,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        String couponCode,
+        BigDecimal discountAmount
 ) { }

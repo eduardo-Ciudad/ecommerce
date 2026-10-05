@@ -6,6 +6,7 @@ import com.eduardo.ecomerce.domain.cart.Cart;
 import com.eduardo.ecomerce.domain.cart.CartRepository;
 import com.eduardo.ecomerce.domain.cartitem.CartItem;
 import com.eduardo.ecomerce.domain.cartitem.CartItemRepository;
+import com.eduardo.ecomerce.domain.coupon.Coupon;
 import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
@@ -48,6 +49,7 @@ public class OrderService {
     private final ShippingService shippingService;
     private final TransactionTemplate transactionTemplate;
     private final EmailService emailService;
+    private final CouponService couponService;
 
     public record ExpiringOrderSnapshot(UUID orderId, String paymentId, BigDecimal total) {}
 
@@ -80,6 +82,11 @@ public class OrderService {
 
         ShippingOutput shipping = shippingService.calculateByMethod(address.getCep(), input.shippingMethod());
 
+        Coupon coupon = null;
+        if (input.couponCode() != null && !input.couponCode().isBlank()) {
+            coupon = couponService.resolveActiveCoupon(input.couponCode());
+        }
+
         Order order = new Order();
         order.setUser(user);
         order.setStatus(OrderStatus.PENDING);
@@ -97,7 +104,7 @@ public class OrderService {
         order.setRecipientCity(address.getCity());
         order.setRecipientState(address.getState());
 
-        BigDecimal total = BigDecimal.ZERO;
+        BigDecimal subtotal = BigDecimal.ZERO;
 
         for (CartItem cartItem : cartItems) {
             ProductVariant variant = cartItem.getVariant();
@@ -109,18 +116,26 @@ public class OrderService {
             orderItem.setUnitPrice(variant.getPrice());
             order.getItems().add(orderItem);
 
-            total = total.add(variant.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity())));
+            subtotal = subtotal.add(variant.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity())));
 
             variant.setStock(variant.getStock() - cartItem.getQuantity());
             productVariantRepository.save(variant);
         }
 
-        total = total.add(shipping.price());
+        BigDecimal discount = BigDecimal.ZERO;
+        if (coupon != null) {
+            discount = couponService.calculateDiscount(subtotal, coupon.getDiscountPercent());
+            order.setCouponCode(coupon.getCode());
+            order.setDiscountAmount(discount);
+        }
+
+        BigDecimal total = subtotal.subtract(discount).add(shipping.price());
 
         order.setTotal(total);
-        orderRepository.save(order);
-        log.info("Pedido criado — usuário: {}, orderId: {}", userId, order.getId());
 
+        orderRepository.save(order);
+        log.info("Pedido criado — usuário: {}, orderId: {}, cupom: {}, desconto: {}",
+                userId, order.getId(), order.getCouponCode(), order.getDiscountAmount());
         cartItemRepository.deleteByCartId(cart.getId());
 
         OrderOutput output = toOutput(order);
@@ -294,7 +309,10 @@ public class OrderService {
                 order.getRecipientCity(),
                 order.getRecipientState(),
                 items,
-                order.getCreatedAt()
+                order.getCreatedAt(),
+                order.getCouponCode(),
+                order.getDiscountAmount()
         );
+
     }
 }
