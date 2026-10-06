@@ -487,4 +487,19 @@ class AuthServiceTest {
 
         verify(userRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("refresh — deve lançar BusinessException (não 500) quando o parse do JWT falha por expiração")
+    void refresh_jwtParseExpired() {
+        RefreshTokenInput input = new RefreshTokenInput("expired-token");
+
+        when(jwtService.extractUsername(input.refreshToken()))
+                .thenThrow(new io.jsonwebtoken.ExpiredJwtException(null, null, "JWT expired"));
+
+        assertThatThrownBy(() -> authService.refresh(input))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Refresh token inválido ou expirado");
+
+        verify(jwtService, never()).generateToken(any());
+    }
 }

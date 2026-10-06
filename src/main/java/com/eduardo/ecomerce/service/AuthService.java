@@ -118,18 +118,24 @@ public class AuthService {
 
 
     public AuthOutput refresh(RefreshTokenInput input) {
-        String email = jwtService.extractUsername(input.refreshToken());
+        String email;
+        User user;
+        try {
+            email = jwtService.extractUsername(input.refreshToken());
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new BusinessException("Usuário não encontrado"));
+            user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new BusinessException("Usuário não encontrado"));
 
-        if (!jwtService.isTokenValid(input.refreshToken(), user)) {
+            if (!jwtService.isTokenValid(input.refreshToken(), user)) {
+                throw new BusinessException("Refresh token inválido ou expirado");
+            }
+
+            String typ = jwtService.extractTokenType(input.refreshToken());
+            if (!"refresh".equals(typ)) {
+                throw new BusinessException("Token inválido");
+            }
+        } catch (io.jsonwebtoken.JwtException | IllegalArgumentException e) {
             throw new BusinessException("Refresh token inválido ou expirado");
-        }
-
-        String typ = jwtService.extractTokenType(input.refreshToken());
-        if (!"refresh".equals(typ)) {
-            throw new BusinessException("Token inválido");
         }
 
         String newAccessToken = jwtService.generateToken(user);
