@@ -38,6 +38,7 @@ import com.mercadopago.client.payment.PaymentItemRequest;
 import com.mercadopago.client.payment.PaymentReceiverAddressRequest;
 import com.mercadopago.client.payment.PaymentShipmentsRequest;
 import com.mercadopago.core.MPRequestOptions;
+import org.jsoup.Jsoup;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -260,11 +261,26 @@ public class PaymentService {
         return PaymentItemRequest.builder()
                 .id(id)
                 .title(buildItemTitle(product, variant))
+                .description(buildItemDescription(product, variant))   // novo
                 .pictureUrl(blankToNull(product.getImageUrl()))
                 .categoryId(MP_ITEM_CATEGORY)
                 .quantity(item.getQuantity())
                 .unitPrice(item.getUnitPrice())
                 .build();
+    }
+
+    private static final int MP_ITEM_DESCRIPTION_MAX = 255;
+
+    private String buildItemDescription(Product product, ProductVariant variant) {
+        String text = product.getDescription() == null ? ""
+                : Jsoup.parse(product.getDescription()).text().replaceAll("\\s+", " ").trim();
+
+        if (text.isEmpty()) {
+            text = buildItemTitle(product, variant);
+        }
+        return text.length() > MP_ITEM_DESCRIPTION_MAX
+                ? text.substring(0, MP_ITEM_DESCRIPTION_MAX - 3) + "..."
+                : text;
     }
 
     private String buildItemTitle(Product product, ProductVariant variant) {
