@@ -123,9 +123,9 @@ class SecurityConfigAuthorizationTest {
                 Arguments.of(
                         "alteração de senha sem autenticação",
                         post("/auth/change-password"),
-                        // O comportamento atual é 403; retornar 401 seria mais apropriado,
-                        // mas exigiria uma mudança funcional fora do escopo desta correção.
-                        HttpStatus.FORBIDDEN.value()
+                        // Sem autenticação → 401 (HttpStatusEntryPoint no SecurityConfig).
+                        // Usuário autenticado sem permissão continua recebendo 403.
+                        HttpStatus.UNAUTHORIZED.value()
                 ),
                 Arguments.of(
                         "criação de produto por usuário sem papel ADMIN",

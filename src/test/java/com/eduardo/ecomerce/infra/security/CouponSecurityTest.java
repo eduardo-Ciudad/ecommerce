@@ -84,7 +84,7 @@ class CouponSecurityTest {
     @DisplayName("Validar cupom sem login é bloqueado")
     void validateRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/coupons/validate").param("code", "teste10"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
