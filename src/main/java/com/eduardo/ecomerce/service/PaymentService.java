@@ -29,6 +29,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import com.eduardo.ecomerce.domain.product.Product;
+import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
+import com.mercadopago.client.common.IdentificationRequest;
+import com.mercadopago.client.payment.PaymentAdditionalInfoPayerRequest;
+import com.mercadopago.client.payment.PaymentAdditionalInfoRequest;
+import com.mercadopago.client.payment.PaymentItemRequest;
+import com.mercadopago.client.payment.PaymentReceiverAddressRequest;
+import com.mercadopago.client.payment.PaymentShipmentsRequest;
+import com.mercadopago.core.MPRequestOptions;
+
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 @Slf4j
 @Service
@@ -41,6 +53,9 @@ public class PaymentService {
 
     @Value("${mercadopago.notification-url}")
     private String notificationUrl;
+    private static final String STATEMENT_DESCRIPTOR = "GABIKIDS";
+    private static final String MP_ITEM_CATEGORY = "fashion";
+    private static final ZoneId STORE_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private static final Set<String> CANCELLABLE_PAYMENT_STATUSES = Set.of("pending", "in_process", "authorized");
     private static final Set<String> KNOWN_PAYMENT_STATUSES =
@@ -117,6 +132,8 @@ public class PaymentService {
         switch (payment.getStatus()) {
             case "approved" -> order.setStatus(OrderStatus.PAID);
             case "rejected" -> {
+                log.warn("Pagamento recusado — Pedido: {}, Payment: {}, status_detail: {}",
+                        order.getId(), payment.getId(), payment.getStatusDetail());
                 order.setStatus(OrderStatus.CANCELLED);
                 orderService.restoreStock(order);
             }
@@ -151,25 +168,28 @@ public class PaymentService {
     private Payment createNewPayment(Order order, PaymentInput input, String payerEmail) {
         PaymentCreateRequest.PaymentCreateRequestBuilder requestBuilder = PaymentCreateRequest.builder()
                 .transactionAmount(order.getTotal())
-                .description("MiniModa - Pedido #" + order.getId().toString().substring(0, 8))
+                .description("GabiKids - Pedido #" + order.getId().toString().substring(0, 8))
+                .statementDescriptor(STATEMENT_DESCRIPTOR)
                 .externalReference(order.getId().toString())
                 .notificationUrl(notificationUrl)
-                .payer(PaymentPayerRequest.builder()
-                        .email(payerEmail)
-                        .build());
+                .payer(buildPayer(order, input, payerEmail))
+                .additionalInfo(buildAdditionalInfo(order));
 
         if ("credit_card".equals(input.paymentMethod())) {
+            if (input.token() == null || input.token().isBlank()) {
+                throw new BusinessException("Dados do cartão ausentes. Tente novamente.");
+            }
             requestBuilder
                     .token(input.token())
                     .installments(input.installments() != null ? input.installments() : 1)
-                    .paymentMethodId(input.cardIssuerId());
+                    .paymentMethodId(input.cardIssuerId())
+                    .issuerId(blankToNull(input.issuerId()));
         } else if ("pix".equals(input.paymentMethod())) {
-            requestBuilder
-                    .paymentMethodId("pix");
+            requestBuilder.paymentMethodId("pix");
         }
 
         try {
-            return paymentClient.create(requestBuilder.build());
+            return paymentClient.create(requestBuilder.build(), buildRequestOptions(input));
         } catch (com.mercadopago.exceptions.MPApiException e) {
             log.error("MP API Error - Status: {}, Content: {}",
                     e.getStatusCode(), e.getApiResponse().getContent());
@@ -178,6 +198,111 @@ public class PaymentService {
             log.error("Erro ao processar pagamento do pedido {}", order.getId(), e);
             throw new BusinessException("Erro ao processar pagamento. Tente novamente.");
         }
+    }
+
+    private PaymentPayerRequest buildPayer(Order order, PaymentInput input, String payerEmail) {
+        String[] names = splitName(order.getUser() != null ? order.getUser().getName() : null);
+
+        PaymentPayerRequest.PaymentPayerRequestBuilder payer = PaymentPayerRequest.builder()
+                .email(payerEmail)
+                .firstName(names[0])
+                .lastName(names[1]);
+
+        String docNumber = onlyDigits(input.payerDocNumber());
+        if (docNumber != null) {
+            payer.identification(IdentificationRequest.builder()
+                    .type(input.payerDocType() != null ? input.payerDocType() : "CPF")
+                    .number(docNumber)
+                    .build());
+        }
+        return payer.build();
+    }
+
+    private PaymentAdditionalInfoRequest buildAdditionalInfo(Order order) {
+        List<PaymentItemRequest> items = order.getItems() == null ? List.of()
+                : order.getItems().stream().map(this::toPaymentItem).toList();
+
+        String[] buyerNames = splitName(order.getUser() != null ? order.getUser().getName() : null);
+        OffsetDateTime registrationDate = order.getUser() != null && order.getUser().getCreatedAt() != null
+                ? order.getUser().getCreatedAt().atZone(STORE_ZONE).toOffsetDateTime()
+                : null;
+
+        PaymentReceiverAddressRequest receiverAddress = PaymentReceiverAddressRequest.builder()
+                .zipCode(onlyDigits(order.getRecipientCep()))
+                .streetName(order.getRecipientStreet())
+                .streetNumber(order.getRecipientNumber())
+                .apartment(blankToNull(order.getRecipientComplement()))
+                .cityName(order.getRecipientCity())
+                .stateName(order.getRecipientState())
+                .build();
+
+        return PaymentAdditionalInfoRequest.builder()
+                .items(items)
+                .payer(PaymentAdditionalInfoPayerRequest.builder()
+                        .firstName(buyerNames[0])
+                        .lastName(buyerNames[1])
+                        .registrationDate(registrationDate)
+                        .build())
+                .shipments(PaymentShipmentsRequest.builder()
+                        .receiverAddress(receiverAddress)
+                        .build())
+                .build();
+    }
+
+    private PaymentItemRequest toPaymentItem(OrderItem item) {
+        ProductVariant variant = item.getVariant();
+        Product product = variant.getProduct();
+
+        String id = variant.getSku() != null && !variant.getSku().isBlank()
+                ? variant.getSku()
+                : variant.getId().toString();
+
+        return PaymentItemRequest.builder()
+                .id(id)
+                .title(buildItemTitle(product, variant))
+                .pictureUrl(blankToNull(product.getImageUrl()))
+                .categoryId(MP_ITEM_CATEGORY)
+                .quantity(item.getQuantity())
+                .unitPrice(item.getUnitPrice())
+                .build();
+    }
+
+    private String buildItemTitle(Product product, ProductVariant variant) {
+        StringBuilder title = new StringBuilder(product.getName());
+        if (variant.getColor() != null && !variant.getColor().isBlank()) {
+            title.append(" - ").append(variant.getColor());
+        }
+        if (variant.getSize() != null && !variant.getSize().isBlank()) {
+            title.append(" - Tam. ").append(variant.getSize());
+        }
+        return title.toString();
+    }
+
+    private MPRequestOptions buildRequestOptions(PaymentInput input) {
+        String deviceId = blankToNull(input.deviceId());
+        Map<String, String> headers = deviceId == null ? Map.of() : Map.of("X-meli-session-id", deviceId);
+        return MPRequestOptions.builder().customHeaders(headers).build();
+    }
+
+    private static String[] splitName(String fullName) {
+        if (fullName == null || fullName.isBlank()) {
+            return new String[]{null, null};
+        }
+        String normalized = fullName.trim().replaceAll("\\s+", " ");
+        int space = normalized.indexOf(' ');
+        return space < 0
+                ? new String[]{normalized, null}
+                : new String[]{normalized.substring(0, space), normalized.substring(space + 1)};
+    }
+
+    private static String onlyDigits(String value) {
+        if (value == null) return null;
+        String digits = value.replaceAll("\\D", "");
+        return digits.isEmpty() ? null : digits;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     public OrphanedPaymentLookup findExistingPaymentForOrder(UUID orderId, BigDecimal expectedTotal) {
