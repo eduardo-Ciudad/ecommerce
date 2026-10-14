@@ -10,6 +10,8 @@ import com.eduardo.ecomerce.domain.coupon.Coupon;
 import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
+import com.eduardo.ecomerce.domain.orderitem.OrderItem;
+import com.eduardo.ecomerce.dto.output.orderitem.OrderItemOutput;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
@@ -117,6 +119,9 @@ class OrderServiceTest {
         variant.setId(variantId);
         variant.setProduct(product);
         variant.setSize("P");
+        variant.setColor("Rosa");
+        variant.setSku("VR-ROSA-P");
+        variant.setGtin("7891234567895");
         variant.setPrice(new BigDecimal("29.90"));
         variant.setStock(10);
 
@@ -150,6 +155,15 @@ class OrderServiceTest {
         assertThat(output.total()).isEqualByComparingTo(new BigDecimal("74.80"));
         verify(productVariantRepository).save(variant);
         verify(cartItemRepository).deleteByCartId(cartId);
+
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(orderCaptor.capture());
+        OrderItem savedItem = orderCaptor.getValue().getItems().get(0);
+        assertThat(savedItem.getProductName()).isEqualTo("Vestido Rosa");
+        assertThat(savedItem.getSize()).isEqualTo("P");
+        assertThat(savedItem.getColor()).isEqualTo("Rosa");
+        assertThat(savedItem.getSku()).isEqualTo("VR-ROSA-P");
+        assertThat(savedItem.getGtin()).isEqualTo("7891234567895");
     }
 
     @Test
@@ -534,5 +548,101 @@ class OrderServiceTest {
         verify(orderRepository, never()).save(any());
         verify(cartItemRepository, never()).deleteByCartId(any());
         verify(emailService, never()).sendNewOrderNotification(any(), any());
+    }
+
+    @Test
+    void shouldFallBackToVariantWhenOrderItemHasNoSnapshot() {
+        UUID userId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+
+        User user = new User();
+        user.setId(userId);
+
+        Product product = new Product();
+        product.setName("Short Moletinho");
+
+        ProductVariant variant = new ProductVariant();
+        variant.setId(UUID.randomUUID());
+        variant.setProduct(product);
+        variant.setSize("4");
+        variant.setColor("Rosa Neon");
+        variant.setSku("SM-ROSA-4");
+        variant.setGtin("7891234567895");
+
+        Order order = new Order();
+        order.setId(orderId);
+        order.setUser(user);
+        order.setTotal(new BigDecimal("34.99"));
+        order.setStatus(OrderStatus.PENDING);
+        order.setCreatedAt(LocalDateTime.now());
+
+        OrderItem item = new OrderItem();
+        item.setId(UUID.randomUUID());
+        item.setOrder(order);
+        item.setVariant(variant);
+        item.setQuantity(1);
+        item.setUnitPrice(new BigDecimal("34.99"));
+        order.setItems(List.of(item));
+
+        when(orderRepository.findByIdAndUserId(orderId, userId)).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.findByUserIdAndOrderId(userId, orderId);
+
+        assertThat(output.items()).hasSize(1);
+        assertThat(output.items().get(0).sku()).isEqualTo("SM-ROSA-4");
+        assertThat(output.items().get(0).gtin()).isEqualTo("7891234567895");
+        assertThat(output.items().get(0).color()).isEqualTo("Rosa Neon");
+        assertThat(output.items().get(0).size()).isEqualTo("4");
+    }
+
+    @Test
+    void shouldPreferOrderItemSnapshotOverCurrentVariantData() {
+        UUID userId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+
+        User user = new User();
+        user.setId(userId);
+
+        Product product = new Product();
+        product.setName("Short Moletinho (nome novo no Bling)");
+
+        ProductVariant variant = new ProductVariant();
+        variant.setId(UUID.randomUUID());
+        variant.setProduct(product);
+        variant.setSize("6");
+        variant.setColor("Azul");
+        variant.setSku("SKU-NOVO");
+        variant.setGtin("7890000000000");
+
+        Order order = new Order();
+        order.setId(orderId);
+        order.setUser(user);
+        order.setTotal(new BigDecimal("34.99"));
+        order.setStatus(OrderStatus.PAID);
+        order.setCreatedAt(LocalDateTime.now());
+
+        OrderItem item = new OrderItem();
+        item.setId(UUID.randomUUID());
+        item.setOrder(order);
+        item.setVariant(variant);
+        item.setQuantity(1);
+        item.setUnitPrice(new BigDecimal("34.99"));
+        item.setProductName("Short Moletinho");
+        item.setSize("4");
+        item.setColor("Rosa Neon");
+        item.setSku("SM-ROSA-4");
+        item.setGtin("7891234567895");
+        order.setItems(List.of(item));
+
+        when(orderRepository.findByIdAndUserId(orderId, userId)).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.findByUserIdAndOrderId(userId, orderId);
+
+        OrderItemOutput itemOutput = output.items().get(0);
+        assertThat(itemOutput.productName()).isEqualTo("Short Moletinho");
+        assertThat(itemOutput.size()).isEqualTo("4");
+        assertThat(itemOutput.color()).isEqualTo("Rosa Neon");
+        assertThat(itemOutput.sku()).isEqualTo("SM-ROSA-4");
+        assertThat(itemOutput.gtin()).isEqualTo("7891234567895");
     }
 }

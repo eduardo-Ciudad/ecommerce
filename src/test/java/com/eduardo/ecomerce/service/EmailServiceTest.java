@@ -45,7 +45,7 @@ class EmailServiceTest {
         ReflectionTestUtils.setField(emailService, "adminEmail", "contato.gabikids@gmail.com");
 
         OrderItemOutput item = new OrderItemOutput(
-                UUID.randomUUID(), UUID.randomUUID(), "Vestido Rosa", "P", null, 2, new BigDecimal("29.90"));
+                UUID.randomUUID(), UUID.randomUUID(), "Vestido Rosa", "P", null, 2, new BigDecimal("29.90"), null, null);
 
         order = new OrderOutput(
                 UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("74.80"),
@@ -83,7 +83,7 @@ class EmailServiceTest {
     @Test
     void shouldIncludeColorInEmailWhenVariantHasColor() {
         OrderItemOutput coloredItem = new OrderItemOutput(
-                UUID.randomUUID(), UUID.randomUUID(), "Short Moletinho", "4", "Rosa Neon", 1, new BigDecimal("34.99"));
+                UUID.randomUUID(), UUID.randomUUID(), "Short Moletinho", "4", "Rosa Neon", 1, new BigDecimal("34.99"), null, null);
         OrderOutput coloredOrder = new OrderOutput(
                 UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("49.99"),
                 OrderStatus.PENDING, null, null,
@@ -100,6 +100,42 @@ class EmailServiceTest {
         verify(mailSender).send(captor.capture());
         assertThat(captor.getValue().getText())
                 .contains("Short Moletinho (tam. 4, cor Rosa Neon) x1");
+    }
+
+    @Test
+    void shouldIncludeSkuAndEanInEmailWhenAvailable() {
+        OrderItemOutput codedItem = new OrderItemOutput(
+                UUID.randomUUID(), UUID.randomUUID(), "Short Moletinho", "4", "Rosa Neon", 1,
+                new BigDecimal("34.99"), "SM-ROSA-4", "7891234567895");
+        OrderOutput codedOrder = new OrderOutput(
+                UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("49.99"),
+                OrderStatus.PENDING, null, null,
+                "PAC", new BigDecimal("15.00"), 7,
+                "Maria Silva", "15046-806", "Rua Teste", "100", null,
+                "Centro", "Rio Preto", "SP",
+                List.of(codedItem), LocalDateTime.now(),
+                null, BigDecimal.ZERO
+        );
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+
+        emailService.sendNewOrderNotification(codedOrder, "maria@example.com");
+
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText())
+                .contains("Short Moletinho (tam. 4, cor Rosa Neon) x1")
+                .contains("SKU: SM-ROSA-4 | EAN: 7891234567895");
+    }
+
+    @Test
+    void shouldOmitCodesInEmailWhenVariantHasNoSkuOrEan() {
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+
+        emailService.sendNewOrderNotification(order, "maria@example.com");
+
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText())
+                .doesNotContain("SKU:")
+                .doesNotContain("EAN:");
     }
 
     @Test

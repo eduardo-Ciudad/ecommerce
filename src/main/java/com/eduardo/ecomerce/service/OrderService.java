@@ -114,6 +114,11 @@ public class OrderService {
             orderItem.setVariant(variant);
             orderItem.setQuantity(cartItem.getQuantity());
             orderItem.setUnitPrice(variant.getPrice());
+            orderItem.setProductName(variant.getProduct().getName());
+            orderItem.setSize(variant.getSize());
+            orderItem.setColor(variant.getColor());
+            orderItem.setSku(variant.getSku());
+            orderItem.setGtin(variant.getGtin());
             order.getItems().add(orderItem);
 
             subtotal = subtotal.add(variant.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity())));
@@ -280,15 +285,7 @@ public class OrderService {
 
     private OrderOutput toOutput(Order order) {
         List<OrderItemOutput> items = order.getItems().stream()
-                .map(item -> new OrderItemOutput(
-                        item.getId(),
-                        item.getVariant().getId(),
-                        item.getVariant().getProduct().getName(),
-                        item.getVariant().getSize(),
-                        item.getVariant().getColor(),
-                        item.getQuantity(),
-                        item.getUnitPrice()
-                ))
+                .map(this::toItemOutput)
                 .toList();
         return new OrderOutput(
                 order.getId(),
@@ -313,6 +310,24 @@ public class OrderService {
                 order.getCouponCode(),
                 order.getDiscountAmount()
         );
+    }
 
+    private OrderItemOutput toItemOutput(OrderItem item) {
+        ProductVariant variant = item.getVariant();
+        return new OrderItemOutput(
+                item.getId(),
+                variant.getId(),
+                snapshotOr(item.getProductName(), variant.getProduct().getName()),
+                snapshotOr(item.getSize(), variant.getSize()),
+                snapshotOr(item.getColor(), variant.getColor()),
+                item.getQuantity(),
+                item.getUnitPrice(),
+                snapshotOr(item.getSku(), variant.getSku()),
+                snapshotOr(item.getGtin(), variant.getGtin())
+        );
+    }
+
+    private static String snapshotOr(String snapshot, String current) {
+        return snapshot != null && !snapshot.isBlank() ? snapshot : current;
     }
 }

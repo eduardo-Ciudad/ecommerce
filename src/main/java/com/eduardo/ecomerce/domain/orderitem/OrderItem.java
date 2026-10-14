@@ -34,4 +34,19 @@ public class OrderItem {
 
     @Column(name = "unit_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal unitPrice;
+
+    @Column(name = "product_name", length = 150)
+    private String productName;
+
+    @Column(length = 100)
+    private String size;
+
+    @Column(length = 100)
+    private String color;
+
+    @Column(length = 100)
+    private String sku;
+
+    @Column(length = 14)
+    private String gtin;
 }

@@ -10,6 +10,8 @@ public record OrderItemOutput(
         String size,
         String color,
         Integer quantity,
-        BigDecimal unitPrice
+        BigDecimal unitPrice,
+        String sku,
+        String gtin
 ) {
 }

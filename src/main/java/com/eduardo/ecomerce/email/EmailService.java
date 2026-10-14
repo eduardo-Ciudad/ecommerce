@@ -115,6 +115,7 @@ public class EmailService {
                         .append(" x")
                         .append(item.quantity())
                         .append(" — R$ ").append(item.unitPrice())
+                        .append(describeCodes(item))
                         .append("\n");
             }
             SimpleMailMessage message = new SimpleMailMessage();
@@ -150,6 +151,17 @@ public class EmailService {
             parts.add("cor " + item.color());
         }
         return parts.isEmpty() ? "" : " (" + String.join(", ", parts) + ")";
+    }
+
+    private String describeCodes(OrderItemOutput item) {
+        List<String> parts = new ArrayList<>();
+        if (item.sku() != null && !item.sku().isBlank()) {
+            parts.add("SKU: " + item.sku());
+        }
+        if (item.gtin() != null && !item.gtin().isBlank()) {
+            parts.add("EAN: " + item.gtin());
+        }
+        return parts.isEmpty() ? "" : " — " + String.join(" | ", parts);
     }
 
 }
