@@ -308,7 +308,9 @@ public class OrderService {
                 items,
                 order.getCreatedAt(),
                 order.getCouponCode(),
-                order.getDiscountAmount()
+                order.getDiscountAmount(),
+                order.canReceivePayment(),
+                order.getPaymentDeadline()
         );
     }
 

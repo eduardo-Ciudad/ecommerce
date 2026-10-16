@@ -29,5 +29,7 @@ public record OrderOutput(
         List<OrderItemOutput> items,
         LocalDateTime createdAt,
         String couponCode,
-        BigDecimal discountAmount
+        BigDecimal discountAmount,
+        boolean canPay,
+        LocalDateTime paymentDeadline
 ) { }

@@ -645,4 +645,69 @@ class OrderServiceTest {
         assertThat(itemOutput.sku()).isEqualTo("SM-ROSA-4");
         assertThat(itemOutput.gtin()).isEqualTo("7891234567895");
     }
+
+    // ---------- issue #7: campos de pagamento no OrderOutput ----------
+
+    private Order pendingOrderFor(UUID userId, String paymentId, String paymentStatus) {
+        User user = new User();
+        user.setId(userId);
+        Product product = new Product();
+        product.setName("Vestido");
+        ProductVariant variant = new ProductVariant();
+        variant.setId(UUID.randomUUID());
+        variant.setProduct(product);
+        variant.setStock(3);
+        Order order = new Order();
+        order.setId(UUID.randomUUID());
+        order.setUser(user);
+        order.setTotal(new BigDecimal("80.00"));
+        order.setStatus(OrderStatus.PENDING);
+        order.setPaymentId(paymentId);
+        order.setPaymentStatus(paymentStatus);
+        order.setCreatedAt(LocalDateTime.now());
+        OrderItem item = new OrderItem();
+        item.setId(UUID.randomUUID());
+        item.setOrder(order);
+        item.setVariant(variant);
+        item.setQuantity(2);
+        item.setUnitPrice(new BigDecimal("40.00"));
+        item.setProductName("Vestido");
+        order.setItems(new java.util.ArrayList<>(List.of(item)));
+        return order;
+    }
+
+    @Test
+    void toOutput_pedidoPendingAposRecusaDentroDaJanela_canPayTrueComPrazo() {
+        UUID userId = UUID.randomUUID();
+        Order order = pendingOrderFor(userId, "pay-1", "rejected");
+        when(orderRepository.findByIdAndUserId(order.getId(), userId)).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.findByUserIdAndOrderId(userId, order.getId());
+
+        assertThat(output.canPay()).isTrue();
+        assertThat(output.paymentDeadline()).isEqualTo(order.getCreatedAt().plusMinutes(Order.PAYMENT_WINDOW_MINUTES));
+    }
+
+    @Test
+    void toOutput_pedidoComPagamentoEmAndamento_canPayFalse() {
+        UUID userId = UUID.randomUUID();
+        Order order = pendingOrderFor(userId, "pay-1", "pending");
+        when(orderRepository.findByIdAndUserId(order.getId(), userId)).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.findByUserIdAndOrderId(userId, order.getId());
+
+        assertThat(output.canPay()).isFalse();
+    }
+
+    @Test
+    void toOutput_pedidoForaDaJanela_canPayFalse() {
+        UUID userId = UUID.randomUUID();
+        Order order = pendingOrderFor(userId, null, null);
+        order.setCreatedAt(LocalDateTime.now().minusMinutes(Order.PAYMENT_WINDOW_MINUTES + 1));
+        when(orderRepository.findByIdAndUserId(order.getId(), userId)).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.findByUserIdAndOrderId(userId, order.getId());
+
+        assertThat(output.canPay()).isFalse();
+    }
 }

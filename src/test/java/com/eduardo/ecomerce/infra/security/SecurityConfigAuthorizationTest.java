@@ -109,7 +109,8 @@ class SecurityConfigAuthorizationTest {
                 null, null, null, null, null,
                 null, null, null, null, null, null, null, null,
                 List.of(), java.time.LocalDateTime.now(),
-                null, java.math.BigDecimal.ZERO
+                null, java.math.BigDecimal.ZERO,
+                false, null
         );
     }
 
