@@ -470,7 +470,6 @@ class PaymentServiceTest {
         assertThat(output).contains("fora de PENDING").contains("PAID");
     }
 
-    @Test
     @ParameterizedTest
     @ValueSource(strings = {"rejected", "cancelled"})
     void processWebhook_falhaEmPedidoPending_mantemPendingSemDevolverEstoque(String status) throws Exception {
