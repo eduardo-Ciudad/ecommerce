@@ -725,7 +725,13 @@ class OrderServiceTest {
         OrderOutput output = orderService.findByUserIdAndOrderId(userId, order.getId());
 
         assertThat(output.canPay()).isTrue();
-        assertThat(output.paymentDeadline()).isEqualTo(order.getCreatedAt().plusMinutes(Order.PAYMENT_WINDOW_MINUTES));
+        // o prazo sai com offset para o navegador converter corretamente para o fuso do cliente
+        assertThat(output.paymentDeadline()).isNotNull();
+        assertThat(output.paymentDeadline().getOffset()).isNotNull();
+        assertThat(output.paymentDeadline().toLocalDateTime())
+                .isEqualTo(order.getCreatedAt().plusMinutes(Order.PAYMENT_WINDOW_MINUTES));
+        assertThat(output.paymentDeadline().toInstant())
+                .isEqualTo(order.getPaymentDeadline().atZone(java.time.ZoneId.systemDefault()).toInstant());
     }
 
     @Test
@@ -736,6 +742,19 @@ class OrderServiceTest {
 
         OrderOutput output = orderService.findByUserIdAndOrderId(userId, order.getId());
 
+        assertThat(output.canPay()).isFalse();
+    }
+
+    @Test
+    void toOutput_pedidoSemCreatedAt_paymentDeadlineNulo() {
+        UUID userId = UUID.randomUUID();
+        Order order = pendingOrderFor(userId, null, null);
+        order.setCreatedAt(null);
+        when(orderRepository.findByIdAndUserId(order.getId(), userId)).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.findByUserIdAndOrderId(userId, order.getId());
+
+        assertThat(output.paymentDeadline()).isNull();
         assertThat(output.canPay()).isFalse();
     }
 

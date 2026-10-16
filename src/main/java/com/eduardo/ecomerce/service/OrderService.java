@@ -32,6 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -311,7 +314,7 @@ public class OrderService {
                 order.getCouponCode(),
                 order.getDiscountAmount(),
                 order.canReceivePayment(),
-                order.getPaymentDeadline()
+                toOffset(order.getPaymentDeadline())
         );
     }
 
@@ -328,6 +331,14 @@ public class OrderService {
                 snapshotOr(item.getSku(), variant.getSku()),
                 snapshotOr(item.getGtin(), variant.getGtin())
         );
+    }
+
+    /**
+     * As datas do pedido são LocalDateTime no fuso da JVM (UTC no container). Sem o offset, o navegador
+     * interpretaria o valor como horário local do cliente e mostraria o prazo deslocado (ex.: +3h no Brasil).
+     */
+    private static OffsetDateTime toOffset(LocalDateTime value) {
+        return value == null ? null : value.atZone(ZoneId.systemDefault()).toOffsetDateTime();
     }
 
     private static String snapshotOr(String snapshot, String current) {
