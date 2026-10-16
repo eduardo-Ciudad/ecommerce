@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -93,5 +94,33 @@ public class Order {
     @PrePersist
     private void prePersist() {
         this.createdAt = LocalDateTime.now();
+    }
+
+    public static final long PAYMENT_WINDOW_MINUTES = 30;
+
+    private static final Set<String> FAILED_PAYMENT_STATUSES = Set.of("rejected", "cancelled");
+
+    /**
+     * true se existe um pagamento no Mercado Pago que ainda pode ser (ou já foi) aprovado.
+     * Pagamentos com status final de falha (rejected/cancelled) não contam como tentativa ativa.
+     */
+    public boolean hasActivePaymentAttempt() {
+        // Set.of(...).contains(null) lança NPE: paymentStatus pode ser nulo com paymentId preenchido
+        // (ex.: pagamento órfão adotado pelo job de expiração), e nesse caso a tentativa conta como ativa.
+        boolean failed = paymentStatus != null && FAILED_PAYMENT_STATUSES.contains(paymentStatus);
+        return paymentId != null && !failed;
+    }
+
+    /** Pedido ainda pode receber uma nova tentativa de pagamento (dentro da janela de reserva). */
+    public boolean canReceivePayment() {
+        LocalDateTime deadline = getPaymentDeadline();
+        return status == OrderStatus.PENDING
+                && !hasActivePaymentAttempt()
+                && deadline != null
+                && LocalDateTime.now().isBefore(deadline);
+    }
+
+    public LocalDateTime getPaymentDeadline() {
+        return createdAt == null ? null : createdAt.plusMinutes(PAYMENT_WINDOW_MINUTES);
     }
 }
