@@ -19,15 +19,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class OrderExpirationScheduler {
 
-    private static final long PENDING_ORDER_EXPIRATION_MINUTES = 30;
-
     private final OrderRepository orderRepository;
     private final OrderService orderService;
     private final PaymentService paymentService;
 
     @Scheduled(fixedDelay = 5 * 60 * 1000)
     public void expireAbandonedOrders() {
-        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(PENDING_ORDER_EXPIRATION_MINUTES);
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(Order.PAYMENT_WINDOW_MINUTES);
 
         List<Order> candidates = orderRepository.findByStatusAndCreatedAtBefore(OrderStatus.PENDING, cutoff);
 

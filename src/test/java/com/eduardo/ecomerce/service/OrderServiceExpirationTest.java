@@ -76,6 +76,19 @@ class OrderServiceExpirationTest {
         assertUnchanged(order, OrderStatus.PENDING, "payment-1");
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"rejected", "cancelled"})
+    void lockPendingOrderForExpiration_tentativaFalha_retornaSnapshotSemPaymentId(String status) {
+        Order order = order(OrderStatus.PENDING, "payment-1");
+        order.setPaymentStatus(status);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        Optional<OrderService.ExpiringOrderSnapshot> result = service.lockPendingOrderForExpiration(order.getId());
+
+        assertThat(result).contains(new OrderService.ExpiringOrderSnapshot(order.getId(), null, order.getTotal()));
+        assertUnchanged(order, OrderStatus.PENDING, "payment-1");
+    }
+
     @Test
     void lockPendingOrderForExpiration_pedidoInexistente_retornaOptionalVazio() {
         UUID id = UUID.randomUUID();
@@ -106,6 +119,31 @@ class OrderServiceExpirationTest {
         verify(orderRepository).save(order);
         verify(service).restoreStock(order);
         verify(productVariantRepository).save(variant(order));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"rejected", "cancelled"})
+    void cancelExpiredOrderWithoutPayment_tentativaFalha_cancelaEDevolveEstoque(String status) {
+        Order order = order(OrderStatus.PENDING, "payment-1");
+        order.setPaymentStatus(status);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        boolean result = service.cancelExpiredOrderWithoutPayment(order.getId());
+
+        assertThat(result).isTrue();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getPaymentId()).isEqualTo("payment-1");
+        assertThat(variant(order).getStock()).isEqualTo(7);
+        verify(orderRepository).save(order);
+        verify(service).restoreStock(order);
+    }
+
+    @Test
+    void cancelExpiredOrderWithoutPayment_tentativaAtiva_retornaFalse(CapturedOutput output) {
+        Order order = order(OrderStatus.PENDING, "payment-1");
+        order.setPaymentStatus("pending");
+        assertCancelWithoutPaymentRejected(order);
+        assertThat(output).contains("mudou de estado");
     }
 
     @Test

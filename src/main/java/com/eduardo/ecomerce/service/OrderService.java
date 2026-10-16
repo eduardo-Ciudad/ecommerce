@@ -198,7 +198,8 @@ public class OrderService {
                 return Optional.empty();
             }
 
-            return Optional.of(new ExpiringOrderSnapshot(order.getId(), order.getPaymentId(), order.getTotal()));
+            String activePaymentId = order.hasActivePaymentAttempt() ? order.getPaymentId() : null;
+            return Optional.of(new ExpiringOrderSnapshot(order.getId(), activePaymentId, order.getTotal()));
         });
     }
 
@@ -208,7 +209,7 @@ public class OrderService {
 
             boolean stillEligible = order != null
                     && order.getStatus() == OrderStatus.PENDING
-                    && order.getPaymentId() == null;
+                    && !order.hasActivePaymentAttempt();
 
             if (!stillEligible) {
                 log.warn("Pedido {} mudou de estado durante a expiração (verificação de pagamento órfão) — nenhuma alteração aplicada. Requer investigação se inesperado.",
@@ -268,7 +269,7 @@ public class OrderService {
         if (order.getStatus() != OrderStatus.PENDING) {
             throw  new BusinessException("esse pedido nao pode ser alterado");
         }
-        if (order.getPaymentId() != null) {
+        if (order.hasActivePaymentAttempt()) {
             throw new BusinessException(
                     "Esse pedido já tem um pagamento em andamento e não pode ser cancelado automaticamente. Entre em contato com o suporte.");
         }

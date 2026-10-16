@@ -646,7 +646,7 @@ class OrderServiceTest {
         assertThat(itemOutput.gtin()).isEqualTo("7891234567895");
     }
 
-    // ---------- issue #7: campos de pagamento no OrderOutput ----------
+    // ---------- issue #7: cancelamento pelo cliente e campos de pagamento ----------
 
     private Order pendingOrderFor(UUID userId, String paymentId, String paymentStatus) {
         User user = new User();
@@ -674,6 +674,46 @@ class OrderServiceTest {
         item.setProductName("Vestido");
         order.setItems(new java.util.ArrayList<>(List.of(item)));
         return order;
+    }
+
+    @Test
+    void cancelByCustomer_semPagamento_cancelaEDevolveEstoque() {
+        UUID userId = UUID.randomUUID();
+        Order order = pendingOrderFor(userId, null, null);
+        when(orderRepository.findByIdAndUserIdForUpdate(order.getId(), userId)).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.cancelByCustomer(userId, order.getId());
+
+        assertThat(output.status()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(output.canPay()).isFalse();
+        assertThat(order.getItems().get(0).getVariant().getStock()).isEqualTo(5);
+        verify(orderRepository).save(order);
+    }
+
+    @Test
+    void cancelByCustomer_aposPagamentoRecusado_cancelaEDevolveEstoque() {
+        UUID userId = UUID.randomUUID();
+        Order order = pendingOrderFor(userId, "pay-1", "rejected");
+        when(orderRepository.findByIdAndUserIdForUpdate(order.getId(), userId)).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.cancelByCustomer(userId, order.getId());
+
+        assertThat(output.status()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getItems().get(0).getVariant().getStock()).isEqualTo(5);
+        verify(orderRepository).save(order);
+    }
+
+    @Test
+    void cancelByCustomer_comPagamentoAtivo_lancaExcecaoSemAlterar() {
+        UUID userId = UUID.randomUUID();
+        Order order = pendingOrderFor(userId, "pay-1", "pending");
+        when(orderRepository.findByIdAndUserIdForUpdate(order.getId(), userId)).thenReturn(Optional.of(order));
+
+        assertThrows(BusinessException.class, () -> orderService.cancelByCustomer(userId, order.getId()));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getItems().get(0).getVariant().getStock()).isEqualTo(3);
+        verify(orderRepository, never()).save(any());
     }
 
     @Test
