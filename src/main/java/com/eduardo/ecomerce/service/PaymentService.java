@@ -59,8 +59,10 @@ public class PaymentService {
     private static final ZoneId STORE_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private static final Set<String> CANCELLABLE_PAYMENT_STATUSES = Set.of("pending", "in_process", "authorized");
-    private static final Set<String> KNOWN_PAYMENT_STATUSES =
-            Set.of("approved", "rejected", "pending", "in_process", "authorized");
+    // Status de um pagamento que ainda vale reaproveitar para o pedido. Pagamentos recusados
+    // ou cancelados ficam de fora para que uma nova tentativa crie um pagamento novo.
+    private static final Set<String> REUSABLE_PAYMENT_STATUSES =
+            Set.of("approved", "pending", "in_process", "authorized");
 
     public enum PaymentCancellationOutcome {
         NOT_CANCELLABLE,
@@ -105,12 +107,17 @@ public class PaymentService {
             throw new BusinessException("Pedido não pertence ao usuário autenticado");
         }
 
-        if (order.getPaymentId() != null) {
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new BusinessException("Pedido não está pendente de pagamento");
+        }
+
+        if (order.hasActivePaymentAttempt()) {
             throw new BusinessException("Pedido já possui pagamento em processamento");
         }
 
-        if (order.getStatus() != OrderStatus.PENDING) {
-            throw new BusinessException("Pedido não está pendente de pagamento");
+        if (!order.canReceivePayment()) {
+            throw new BusinessException(
+                    "O prazo para pagar este pedido expirou. Faça um novo pedido pelo carrinho.");
         }
 
         OrphanedPaymentLookup lookup = findExistingPaymentForOrder(order.getId(), order.getTotal());
@@ -132,12 +139,9 @@ public class PaymentService {
 
         switch (payment.getStatus()) {
             case "approved" -> order.setStatus(OrderStatus.PAID);
-            case "rejected" -> {
-                log.warn("Pagamento recusado — Pedido: {}, Payment: {}, status_detail: {}",
-                        order.getId(), payment.getId(), payment.getStatusDetail());
-                order.setStatus(OrderStatus.CANCELLED);
-                orderService.restoreStock(order);
-            }
+            case "rejected" -> log.warn("Pagamento recusado — Pedido: {}, Payment: {}, status_detail: {}. "
+                            + "Pedido segue PENDING para nova tentativa até {}",
+                    order.getId(), payment.getId(), payment.getStatusDetail(), order.getPaymentDeadline());
         }
 
         orderRepository.save(order);
@@ -335,7 +339,7 @@ public class PaymentService {
                     .filter(p -> orderId.toString().equals(p.getExternalReference()))
                     .filter(p -> p.getTransactionAmount() != null
                             && p.getTransactionAmount().compareTo(expectedTotal) == 0)
-                    .filter(p -> KNOWN_PAYMENT_STATUSES.contains(p.getStatus()))
+                    .filter(p -> REUSABLE_PAYMENT_STATUSES.contains(p.getStatus()))
                     .toList();
 
             if (matching.isEmpty()) {
@@ -375,7 +379,11 @@ public class PaymentService {
                 return;
             }
 
-            boolean paymentIdMatches = order.getPaymentId() == null || paymentId.equals(order.getPaymentId());
+            // Aceita o webhook de uma tentativa nova quando a anterior falhou (rejected/cancelled).
+            // Enquanto houver tentativa ativa, notificações de outros payments seguem ignoradas.
+            boolean paymentIdMatches = order.getPaymentId() == null
+                    || paymentId.equals(order.getPaymentId())
+                    || !order.hasActivePaymentAttempt();
             if (!paymentIdMatches) {
                 log.warn("Webhook ignorado - Pedido: {} está associado ao payment {}, mas recebeu notificação do payment {} (status {})",
                         orderId, order.getPaymentId(), paymentId, status);
@@ -400,10 +408,9 @@ public class PaymentService {
 
             switch (status) {
                 case "approved" -> order.setStatus(OrderStatus.PAID);
-                case "rejected" -> {
-                    order.setStatus(OrderStatus.CANCELLED);
-                    orderService.restoreStock(order);
-                }
+                case "rejected", "cancelled" -> log.info(
+                        "Webhook: pagamento {} {} — pedido {} segue PENDING aguardando nova tentativa ou expiração",
+                        paymentId, status, orderId);
             }
 
             orderRepository.save(order);

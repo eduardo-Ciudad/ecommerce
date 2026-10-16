@@ -30,6 +30,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -72,6 +73,7 @@ class PaymentServiceTest {
         order.setTotal(new BigDecimal("150.00"));
         order.setStatus(OrderStatus.PENDING);
         order.setUser(user);
+        order.setCreatedAt(LocalDateTime.now());
 
         lenient().doReturn(PaymentService.OrphanedPaymentLookup.notFound())
                 .when(paymentService).findExistingPaymentForOrder(any(), any());
@@ -96,7 +98,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void processPayment_cartaoRejeitado_atualizaPedidoParaCancelado() throws Exception {
+    void processPayment_cartaoRejeitado_mantemPedidoPendingSemDevolverEstoque() throws Exception {
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
 
         Payment payment = mockPayment("987654322", "rejected", "cc_rejected_insufficient_amount", orderId);
@@ -106,8 +108,13 @@ class PaymentServiceTest {
         PaymentOutput result = paymentService.processPayment(input, "cliente@teste.com");
 
         assertThat(result.status()).isEqualTo("rejected");
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(orderService).restoreStock(order);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getPaymentId()).isEqualTo("987654322");
+        assertThat(order.getPaymentStatus()).isEqualTo("rejected");
+        assertThat(order.hasActivePaymentAttempt()).isFalse();
+        assertThat(order.canReceivePayment()).isTrue();
+        verify(orderRepository).save(order);
+        verify(orderService, never()).restoreStock(any());
     }
 
     @Test
@@ -153,6 +160,7 @@ class PaymentServiceTest {
     @DisplayName("Deve rejeitar pagamento se o pedido já possui pagamento em processamento")
     void processPayment_pedidoJaPossuiPagamento_lancaBusinessException() throws Exception {
         order.setPaymentId("existing-payment-id");
+        order.setPaymentStatus("pending");
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
 
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
@@ -195,7 +203,7 @@ class PaymentServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"approved", "rejected", "pending", "in_process", "authorized"})
+    @ValueSource(strings = {"approved", "pending", "in_process", "authorized"})
     void findExistingPaymentForOrder_resultadoValido_retornaFound(String status) throws Exception {
         Payment payment = mockPayment("801", status, "detail", orderId);
         stubSearchResults(List.of(payment));
@@ -282,7 +290,7 @@ class PaymentServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"approved", "rejected"})
+    @ValueSource(strings = {"approved", "pending"})
     void processPayment_pagamentoOrfao_reaproveitaSemCriar(String status) throws Exception {
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
         Payment payment = mockPayment("820", status, "detail", orderId);
@@ -296,14 +304,10 @@ class PaymentServiceTest {
         assertThat(order.getPaymentId()).isEqualTo("820");
         assertThat(order.getPaymentStatus()).isEqualTo(status);
         assertThat(order.getStatus()).isEqualTo(
-                "approved".equals(status) ? OrderStatus.PAID : OrderStatus.CANCELLED);
+                "approved".equals(status) ? OrderStatus.PAID : OrderStatus.PENDING);
         verify(paymentClient, never()).create(any(PaymentCreateRequest.class), any(MPRequestOptions.class));
         verify(orderRepository).save(order);
-        if ("rejected".equals(status)) {
-            verify(orderService).restoreStock(order);
-        } else {
-            verify(orderService, never()).restoreStock(any());
-        }
+        verify(orderService, never()).restoreStock(any());
     }
 
     @Test
@@ -467,16 +471,19 @@ class PaymentServiceTest {
     }
 
     @Test
-    void processWebhook_rejectedEmPedidoPending_cancelaEDevolveEstoque() throws Exception {
-        stubGetPayment("604", "rejected", "rejected");
+    @ParameterizedTest
+    @ValueSource(strings = {"rejected", "cancelled"})
+    void processWebhook_falhaEmPedidoPending_mantemPendingSemDevolverEstoque(String status) throws Exception {
+        stubGetPayment("604", status, status);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         paymentService.processWebhook("604");
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(order.getPaymentId()).isEqualTo("604");
-        assertThat(order.getPaymentStatus()).isEqualTo("rejected");
-        verify(orderService).restoreStock(order);
+        assertThat(order.getPaymentStatus()).isEqualTo(status);
+        assertThat(order.canReceivePayment()).isTrue();
+        verify(orderService, never()).restoreStock(any());
         verify(orderRepository).save(order);
     }
 
@@ -554,6 +561,146 @@ class PaymentServiceTest {
         assertThat(result).isEqualTo(PaymentService.PaymentCancellationOutcome.FAILED);
         verify(paymentClient).cancel(704L);
         assertThat(output).contains("Falha ao tentar cancelar payment 704");
+    }
+
+    // ---------- issue #7: nova tentativa de pagamento ----------
+
+    @ParameterizedTest
+    @ValueSource(strings = {"rejected", "cancelled"})
+    void processPayment_aposTentativaFalha_permiteNovaTentativa(String previousStatus) throws Exception {
+        order.setPaymentId("900");
+        order.setPaymentStatus(previousStatus);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_novo", 1, "master", null, null, null, null);
+        Payment payment = mockPayment("901", "approved", "accredited", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        PaymentOutput result = paymentService.processPayment(input, user.getEmail());
+
+        assertThat(result.id()).isEqualTo("901");
+        assertThat(order.getPaymentId()).isEqualTo("901");
+        assertThat(order.getPaymentStatus()).isEqualTo("approved");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(paymentClient).create(any(PaymentCreateRequest.class), any(MPRequestOptions.class));
+        verify(orderService, never()).restoreStock(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pending", "in_process", "authorized", "approved"})
+    void processPayment_comTentativaAtiva_bloqueiaSemCriarPagamento(String activeStatus) throws Exception {
+        order.setPaymentId("910");
+        order.setPaymentStatus(activeStatus);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> paymentService.processPayment(input, user.getEmail()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Pedido já possui pagamento em processamento");
+
+        assertThat(order.getPaymentId()).isEqualTo("910");
+        verify(paymentClient, never()).create(any(PaymentCreateRequest.class), any(MPRequestOptions.class));
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    void processPayment_foraDaJanelaDePagamento_bloqueiaSemCriarPagamento() throws Exception {
+        order.setCreatedAt(LocalDateTime.now().minusMinutes(Order.PAYMENT_WINDOW_MINUTES + 1));
+        PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null, null, null, null);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> paymentService.processPayment(input, user.getEmail()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("prazo para pagar este pedido expirou");
+
+        verify(paymentService, never()).findExistingPaymentForOrder(any(), any());
+        verify(paymentClient, never()).create(any(PaymentCreateRequest.class), any(MPRequestOptions.class));
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    void processPayment_foraDaJanelaAposRecusa_bloqueia() throws Exception {
+        order.setPaymentId("920");
+        order.setPaymentStatus("rejected");
+        order.setCreatedAt(LocalDateTime.now().minusMinutes(Order.PAYMENT_WINDOW_MINUTES + 5));
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> paymentService.processPayment(input, user.getEmail()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("prazo para pagar este pedido expirou");
+
+        verify(paymentClient, never()).create(any(PaymentCreateRequest.class), any(MPRequestOptions.class));
+    }
+
+    @Test
+    void processPayment_novaTentativaTambemRecusada_continuaPendingComUltimoPayment() throws Exception {
+        order.setPaymentId("930");
+        order.setPaymentStatus("rejected");
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        Payment payment = mockPayment("931", "rejected", "cc_rejected_other_reason", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        PaymentOutput result = paymentService.processPayment(input, user.getEmail());
+
+        assertThat(result.status()).isEqualTo("rejected");
+        assertThat(result.statusDetail()).isEqualTo("cc_rejected_other_reason");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getPaymentId()).isEqualTo("931");
+        verify(orderService, never()).restoreStock(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"rejected", "cancelled"})
+    void findExistingPaymentForOrder_tentativaFalha_naoEhReaproveitada(String status) throws Exception {
+        Payment failed = mockPayment("940", status, "detail", orderId);
+        assertLookupNotFoundFor(List.of(failed));
+    }
+
+    @Test
+    void findExistingPaymentForOrder_recusadaMaisPendente_retornaApenasAPendente() throws Exception {
+        Payment rejected = mockPayment("941", "rejected", "cc_rejected_other_reason", orderId);
+        Payment pending = mockPayment("942", "pending", "pending_waiting_transfer", orderId);
+        stubSearchResults(List.of(rejected, pending));
+        doCallRealMethod().when(paymentService).findExistingPaymentForOrder(any(), any());
+
+        PaymentService.OrphanedPaymentLookup result =
+                paymentService.findExistingPaymentForOrder(orderId, order.getTotal());
+
+        assertThat(result.outcome()).isEqualTo(PaymentService.OrphanedPaymentOutcome.FOUND);
+        assertThat(result.payment()).isSameAs(pending);
+    }
+
+    @Test
+    void processWebhook_tentativaNovaAposRecusa_aceitaEAprova() throws Exception {
+        order.setPaymentId("950");
+        order.setPaymentStatus("rejected");
+        stubGetPayment("951", "approved", "accredited");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("951");
+
+        assertThat(order.getPaymentId()).isEqualTo("951");
+        assertThat(order.getPaymentStatus()).isEqualTo("approved");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(orderRepository).save(order);
+        verify(orderService, never()).restoreStock(any());
+    }
+
+    @Test
+    void processWebhook_tentativaAntigaRecusadaComTentativaNovaAtiva_ignora(CapturedOutput output) throws Exception {
+        order.setPaymentId("961");
+        order.setPaymentStatus("pending");
+        stubGetPayment("960", "rejected", "cc_rejected_other_reason");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("960");
+
+        assertThat(order.getPaymentId()).isEqualTo("961");
+        assertThat(order.getPaymentStatus()).isEqualTo("pending");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        verify(orderRepository, never()).save(any());
+        assertThat(output).contains("Webhook ignorado").contains("961").contains("960");
     }
 
     // ---------- helpers ----------
