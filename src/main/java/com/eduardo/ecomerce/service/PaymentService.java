@@ -1,12 +1,14 @@
 package com.eduardo.ecomerce.service;
 
 import com.eduardo.ecomerce.domain.order.Order;
+import com.eduardo.ecomerce.domain.order.OrderPaidEvent;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
 import com.eduardo.ecomerce.dto.input.payment.PaymentInput;
 import com.eduardo.ecomerce.dto.output.payment.PaymentOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
+import com.eduardo.ecomerce.infra.validation.DocumentNumbers;
 import com.mercadopago.client.payment.PaymentClient;
 import com.mercadopago.client.payment.PaymentCreateRequest;
 import com.mercadopago.client.payment.PaymentPayerRequest;
@@ -21,6 +23,7 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +43,8 @@ import com.mercadopago.client.payment.PaymentShipmentsRequest;
 import com.mercadopago.core.MPRequestOptions;
 import org.jsoup.Jsoup;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
@@ -51,6 +56,8 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final OrderService orderService;
     private final PaymentClient paymentClient;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     @Value("${mercadopago.notification-url}")
     private String notificationUrl;
@@ -136,9 +143,12 @@ public class PaymentService {
 
         order.setPaymentId(payment.getId().toString());
         order.setPaymentStatus(payment.getStatus());
+        // reflete sempre a última tentativa (a aprovada é sempre a última)
+        order.setCustomerDocument(DocumentNumbers.onlyDigits(input.payerDocNumber()));
+        order.setPaymentMethod(input.paymentMethod());
 
         switch (payment.getStatus()) {
-            case "approved" -> order.setStatus(OrderStatus.PAID);
+            case "approved" -> markOrderPaid(order);
             case "rejected" -> log.warn("Pagamento recusado — Pedido: {}, Payment: {}, status_detail: {}. "
                             + "Pedido segue PENDING para nova tentativa até {}",
                     order.getId(), payment.getId(), payment.getStatusDetail(), order.getPaymentDeadline());
@@ -213,7 +223,7 @@ public class PaymentService {
                 .firstName(names[0])
                 .lastName(names[1]);
 
-        String docNumber = onlyDigits(input.payerDocNumber());
+        String docNumber = DocumentNumbers.onlyDigits(input.payerDocNumber());
         if (docNumber != null) {
             payer.identification(IdentificationRequest.builder()
                     .type(input.payerDocType() != null ? input.payerDocType() : "CPF")
@@ -233,7 +243,7 @@ public class PaymentService {
                 : null;
 
         PaymentReceiverAddressRequest receiverAddress = PaymentReceiverAddressRequest.builder()
-                .zipCode(onlyDigits(order.getRecipientCep()))
+                .zipCode(DocumentNumbers.onlyDigits(order.getRecipientCep()))
                 .streetName(order.getRecipientStreet())
                 .streetNumber(order.getRecipientNumber())
                 .apartment(blankToNull(order.getRecipientComplement()))
@@ -315,11 +325,35 @@ public class PaymentService {
                 : new String[]{normalized.substring(0, space), normalized.substring(space + 1)};
     }
 
-    private static String onlyDigits(String value) {
-        if (value == null) return null;
-        String digits = value.replaceAll("\\D", "");
-        return digits.isEmpty() ? null : digits;
+    /**
+     * Única passagem para PAID: marca o pedido (paidAt + fila do Bling) e publica o evento.
+     * O listener roda AFTER_COMMIT, então um rollback descarta o evento.
+     */
+    private void markOrderPaid(Order order) {
+        order.markAsPaid(LocalDateTime.now(clock));
+        eventPublisher.publishEvent(new OrderPaidEvent(order.getId()));
     }
+
+    /**
+     * Completa meio de pagamento e documento a partir do pagamento confirmado pelo webhook
+     * (cobre pedido pago cujo processPayment não gravou esses campos, ex.: pagamento órfão).
+     * Documento já gravado nunca é sobrescrito.
+     */
+    private void fillPaymentDataFromWebhook(Order order, Payment payment) {
+        if ("pix".equals(payment.getPaymentMethodId())) {
+            order.setPaymentMethod("pix");
+        } else if ("credit_card".equals(payment.getPaymentTypeId())) {
+            order.setPaymentMethod("credit_card");
+        }
+
+        if (order.getCustomerDocument() == null
+                && payment.getPayer() != null
+                && payment.getPayer().getIdentification() != null) {
+            order.setCustomerDocument(
+                    DocumentNumbers.onlyDigits(payment.getPayer().getIdentification().getNumber()));
+        }
+    }
+
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
@@ -407,7 +441,10 @@ public class PaymentService {
             order.setPaymentStatus(status);
 
             switch (status) {
-                case "approved" -> order.setStatus(OrderStatus.PAID);
+                case "approved" -> {
+                    fillPaymentDataFromWebhook(order, payment);
+                    markOrderPaid(order);
+                }
                 case "rejected", "cancelled" -> log.info(
                         "Webhook: pagamento {} {} — pedido {} segue PENDING aguardando nova tentativa ou expiração",
                         paymentId, status, orderId);

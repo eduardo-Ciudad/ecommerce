@@ -1,6 +1,8 @@
 package com.eduardo.ecomerce.service;
 
+import com.eduardo.ecomerce.domain.order.BlingSyncStatus;
 import com.eduardo.ecomerce.domain.order.Order;
+import com.eduardo.ecomerce.domain.order.OrderPaidEvent;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.user.User;
@@ -25,12 +27,16 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +58,14 @@ class PaymentServiceTest {
     @Mock
     private OrderService orderService;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
+    // 2026-10-19 15:30 em São Paulo
+    private static final ZoneId ZONE = ZoneId.of("America/Sao_Paulo");
+    private final Clock clock = Clock.fixed(Instant.parse("2026-10-19T18:30:00Z"), ZONE);
+    private static final LocalDateTime FIXED_NOW = LocalDateTime.of(2026, 10, 19, 15, 30);
+
     private PaymentService paymentService;
 
     private UUID orderId;
@@ -60,7 +74,7 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        paymentService = spy(new PaymentService(orderRepository, orderService, paymentClient));
+        paymentService = spy(new PaymentService(orderRepository, orderService, paymentClient, eventPublisher, clock));
         ReflectionTestUtils.setField(paymentService, "notificationUrl", "http://teste.com/payments/webhook");
 
         orderId = UUID.randomUUID();
@@ -703,6 +717,180 @@ class PaymentServiceTest {
     }
 
     // ---------- helpers ----------
+
+    // ---------- markAsPaid + OrderPaidEvent + dados do pagador (sync Bling) ----------
+
+    @Test
+    void processPayment_aprovado_marcaPaidComPaidAtEBlingPendingEPublicaEvento() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null,
+                "CPF", "529.982.247-25", null);
+        Payment payment = mockPayment("1001", "approved", "accredited", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(order.getPaidAt()).isEqualTo(FIXED_NOW);
+        assertThat(order.getBlingSyncStatus()).isEqualTo(BlingSyncStatus.PENDING);
+        verify(eventPublisher, times(1)).publishEvent(new OrderPaidEvent(orderId));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pix", "credit_card"})
+    void processPayment_gravaCustomerDocumentSoDigitosEPaymentMethod(String method) throws Exception {
+        PaymentInput input = new PaymentInput(orderId, method, "tok_123", 1, "visa", null,
+                "CPF", "529.982.247-25", null);
+        Payment payment = mockPayment("1002", "pending", null, orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(order.getCustomerDocument()).isEqualTo("52998224725");
+        assertThat(order.getPaymentMethod()).isEqualTo(method);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"rejected", "pending", "in_process"})
+    void processPayment_naoAprovado_naoMarcaPaidNemPublicaEvento(String status) throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null,
+                "CPF", "52998224725", null);
+        Payment payment = mockPayment("1003", status, null, orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getPaidAt()).isNull();
+        assertThat(order.getBlingSyncStatus()).isNull();
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void processPayment_pagamentoOrfaoAprovado_publicaEvento() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null,
+                "CPF", "52998224725", null);
+        Payment payment = mockPayment("1004", "approved", "accredited", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        doReturn(PaymentService.OrphanedPaymentLookup.found(payment))
+                .when(paymentService).findExistingPaymentForOrder(orderId, order.getTotal());
+
+        paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(eventPublisher).publishEvent(new OrderPaidEvent(orderId));
+    }
+
+    @Test
+    void processWebhook_aprovado_marcaPaidComPaidAtEPublicaEvento() throws Exception {
+        stubGetPayment("1101", "approved", "accredited");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("1101");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(order.getPaidAt()).isEqualTo(FIXED_NOW);
+        assertThat(order.getBlingSyncStatus()).isEqualTo(BlingSyncStatus.PENDING);
+        verify(eventPublisher, times(1)).publishEvent(new OrderPaidEvent(orderId));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"rejected", "cancelled", "pending"})
+    void processWebhook_naoAprovado_naoPublicaEvento(String status) throws Exception {
+        stubGetPayment("1102", status, status);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("1102");
+
+        assertThat(order.getPaidAt()).isNull();
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void processWebhook_jaProcessado_naoPublicaEvento() throws Exception {
+        stubGetPayment("1103", "approved", "accredited");
+        order.setStatus(OrderStatus.PAID);
+        order.setPaymentId("1103");
+        order.setPaymentStatus("approved");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("1103");
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void processWebhook_pedidoForaDePending_naoPublicaEvento() throws Exception {
+        stubGetPayment("1104", "approved", "accredited");
+        order.setStatus(OrderStatus.CANCELLED);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("1104");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void processWebhook_pix_preenchePaymentMethodPix() throws Exception {
+        Payment payment = stubGetPayment("1105", "approved", "accredited");
+        when(payment.getPaymentMethodId()).thenReturn("pix");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("1105");
+
+        assertThat(order.getPaymentMethod()).isEqualTo("pix");
+    }
+
+    @Test
+    void processWebhook_cartao_preenchePaymentMethodCreditCard() throws Exception {
+        Payment payment = stubGetPayment("1106", "approved", "accredited");
+        when(payment.getPaymentMethodId()).thenReturn("visa");
+        when(payment.getPaymentTypeId()).thenReturn("credit_card");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("1106");
+
+        assertThat(order.getPaymentMethod()).isEqualTo("credit_card");
+    }
+
+    @Test
+    void processWebhook_semDocumento_usaIdentificacaoDoPagador() throws Exception {
+        Payment payment = mockPaymentWithPayerDocument("1107", "529.982.247-25");
+        when(paymentClient.get(1107L)).thenReturn(payment);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("1107");
+
+        assertThat(order.getCustomerDocument()).isEqualTo("52998224725");
+    }
+
+    @Test
+    void processWebhook_comDocumentoJaGravado_naoSobrescreve() throws Exception {
+        Payment payment = mockPaymentWithPayerDocument("1108", "111.444.777-35");
+        when(paymentClient.get(1108L)).thenReturn(payment);
+        order.setCustomerDocument("52998224725");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+
+        paymentService.processWebhook("1108");
+
+        assertThat(order.getCustomerDocument()).isEqualTo("52998224725");
+    }
+
+    private Payment mockPaymentWithPayerDocument(String id, String document) {
+        // deep stubs: payment.getPayer().getIdentification().getNumber()
+        Payment payment = mock(Payment.class, RETURNS_DEEP_STUBS);
+        lenient().when(payment.getId()).thenReturn(Long.parseLong(id));
+        lenient().when(payment.getStatus()).thenReturn("approved");
+        lenient().when(payment.getStatusDetail()).thenReturn("accredited");
+        lenient().when(payment.getExternalReference()).thenReturn(orderId.toString());
+        lenient().when(payment.getTransactionAmount()).thenReturn(new BigDecimal("150.00"));
+        lenient().when(payment.getPaymentMethodId()).thenReturn("pix");
+        lenient().when(payment.getPayer().getIdentification().getNumber()).thenReturn(document);
+        return payment;
+    }
 
     private Payment stubGetPayment(String id, String status, String statusDetail) throws Exception {
         Payment payment = mockPayment(id, status, statusDetail, orderId);

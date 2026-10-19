@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
 
+@ValidPayerDocument
 public record PaymentInput(
         @NotNull UUID orderId,
 
@@ -23,9 +24,11 @@ public record PaymentInput(
         @Size(max = 32)
         String issuerId,
 
+        @NotBlank(message = "Tipo de documento é obrigatório")
         @Pattern(regexp = "^(CPF|CNPJ)$", message = "Tipo de documento deve ser CPF ou CNPJ")
         String payerDocType,
 
+        @NotBlank(message = "CPF/CNPJ é obrigatório")
         @Size(max = 18)
         String payerDocNumber,
 
