@@ -21,7 +21,10 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 
 @Slf4j
@@ -106,15 +109,76 @@ public class BlingClient {
         );
     }
 
+    // ---------- Pedidos de venda / contatos (sync site -> Bling) ----------
+
+    public JsonNode findContactsByDocument(String accessToken, String documentDigits) {
+        return authenticatedGet(
+                accessToken,
+                uriBuilder -> uriBuilder
+                        .path("/contatos")
+                        .queryParam("numeroDocumento", documentDigits)
+                        .build()
+        );
+    }
+
+    public JsonNode createContact(String accessToken, JsonNode body) {
+        return authenticatedPost(accessToken, uriBuilder -> uriBuilder.path("/contatos").build(), body);
+    }
+
+    public JsonNode findSaleOrdersByStoreNumber(String accessToken, Long storeId, String storeNumber) {
+        return authenticatedGet(
+                accessToken,
+                uriBuilder -> uriBuilder
+                        .path("/pedidos/vendas")
+                        .queryParam("idLoja", storeId)
+                        .queryParam("numerosLojas[]", storeNumber)
+                        .build()
+        );
+    }
+
+    public JsonNode createSaleOrder(String accessToken, JsonNode body) {
+        return authenticatedPost(accessToken, uriBuilder -> uriBuilder.path("/pedidos/vendas").build(), body);
+    }
+
+    /** Lança o estoque do pedido no depósito padrão. Resposta pode vir vazia (retorna null). */
+    public JsonNode launchSaleOrderStock(String accessToken, Long saleOrderId) {
+        return authenticatedPost(
+                accessToken,
+                uriBuilder -> uriBuilder.path("/pedidos/vendas/{id}/lancar-estoque").build(saleOrderId),
+                null
+        );
+    }
+
+    // ---------- HTTP autenticado ----------
+
     private JsonNode authenticatedGet(String accessToken, Function<UriBuilder, URI> uriFunction) {
-        throttler.throttle();
-        try {
-            return restClient.get()
+        return executeAuthenticated(() -> restClient.get()
+                .uri(uriFunction::apply)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .header("enable-jwt", "1")
+                .retrieve()
+                .body(JsonNode.class));
+    }
+
+    private JsonNode authenticatedPost(String accessToken, Function<UriBuilder, URI> uriFunction, Object body) {
+        return executeAuthenticated(() -> {
+            RestClient.RequestBodySpec request = restClient.post()
                     .uri(uriFunction::apply)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                     .header("enable-jwt", "1")
-                    .retrieve()
-                    .body(JsonNode.class);
+                    .contentType(MediaType.APPLICATION_JSON);
+            if (body != null) {
+                request.body(body);
+            }
+            return request.retrieve().body(JsonNode.class);
+        });
+    }
+
+    /** Throttle + tradução de erros comum a todas as chamadas autenticadas. */
+    private JsonNode executeAuthenticated(Supplier<JsonNode> call) {
+        throttler.throttle();
+        try {
+            return call.get();
         } catch (HttpClientErrorException.Unauthorized e) {
             JsonNode errorBody = parseErrorBody(e);
             String type = extractBlingErrorField(errorBody, "type");
@@ -127,11 +191,13 @@ public class BlingClient {
             JsonNode errorBody = parseErrorBody(e);
             String type = extractBlingErrorField(errorBody, "type");
             String description = extractBlingErrorField(errorBody, "description");
+            String fields = extractBlingErrorFields(errorBody);
             int status = e.getStatusCode().value();
-            log.error("Erro HTTP {} em chamada autenticada à API do Bling: type={}, description={}", status, type, description);
-            throw new BlingIntegrationException(
-                    "Falha ao consultar a API do Bling (HTTP " + status + "): " + description, e, status, type, description
-            );
+            log.error("Erro HTTP {} em chamada autenticada à API do Bling: type={}, description={}, fields={}",
+                    status, type, description, fields);
+            String message = "Falha ao consultar a API do Bling (HTTP " + status + "): " + description
+                    + (fields != null ? " | " + fields : "");
+            throw new BlingIntegrationException(message, e, status, type, description);
         } catch (RestClientException e) {
             log.error("Falha em chamada autenticada à API do Bling", e);
             throw new BlingIntegrationException("Falha ao consultar a API do Bling", e);
@@ -173,6 +239,24 @@ public class BlingClient {
         } catch (Exception parseError) {
             return null;
         }
+    }
+
+    /** Junta error.fields[] do Bling como "element: msg; element: msg". Null se não houver. */
+    private String extractBlingErrorFields(JsonNode errorBody) {
+        if (errorBody == null) {
+            return null;
+        }
+        JsonNode fields = errorBody.path("error").path("fields");
+        if (!fields.isArray() || fields.isEmpty()) {
+            return null;
+        }
+        List<String> parts = new ArrayList<>();
+        for (JsonNode field : fields) {
+            String element = field.path("element").asText("");
+            String msg = field.path("msg").asText("");
+            parts.add(element.isBlank() ? msg : element + ": " + msg);
+        }
+        return String.join("; ", parts);
     }
 
     private String extractBlingErrorField(JsonNode errorBody, String field) {
