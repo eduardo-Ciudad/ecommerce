@@ -2,11 +2,13 @@ package com.eduardo.ecomerce.domain.order;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OrderTest {
 
@@ -91,5 +93,45 @@ class OrderTest {
         Order order = pendingOrder(null, null);
         order.setCreatedAt(created);
         assertThat(order.getPaymentDeadline()).isEqualTo(created.plusMinutes(Order.PAYMENT_WINDOW_MINUTES));
+    }
+
+    // ---------- markAsPaid ----------
+
+    @Test
+    void markAsPaid_pedidoPending_ficaPaidComPaidAtEBlingPending() {
+        LocalDateTime paidAt = LocalDateTime.of(2026, 10, 19, 15, 30);
+        Order order = pendingOrder("pay-1", "approved");
+
+        order.markAsPaid(paidAt);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(order.getPaidAt()).isEqualTo(paidAt);
+        assertThat(order.getBlingSyncStatus()).isEqualTo(BlingSyncStatus.PENDING);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = OrderStatus.class, names = {"PAID", "CANCELLED", "SHIPPED", "DELIVERED"})
+    void markAsPaid_statusDiferenteDePending_lancaExcecaoESemAlterarNada(OrderStatus status) {
+        Order order = pendingOrder("pay-1", "approved");
+        order.setStatus(status);
+
+        assertThatThrownBy(() -> order.markAsPaid(LocalDateTime.now()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(status.name());
+
+        assertThat(order.getStatus()).isEqualTo(status);
+        assertThat(order.getPaidAt()).isNull();
+        assertThat(order.getBlingSyncStatus()).isNull();
+    }
+
+    @Test
+    void novoPedido_blingSyncComValoresPadrao() {
+        Order order = new Order();
+
+        assertThat(order.getBlingSyncStatus()).isNull();
+        assertThat(order.getBlingSyncAttempts()).isZero();
+        assertThat(order.getBlingOrderId()).isNull();
+        assertThat(order.getBlingSyncError()).isNull();
+        assertThat(order.getPaidAt()).isNull();
     }
 }

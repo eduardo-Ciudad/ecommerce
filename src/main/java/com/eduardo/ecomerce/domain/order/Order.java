@@ -84,6 +84,34 @@ public class Order {
     @Column(name = "recipient_state", length = 2)
     private String recipientState;
 
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
+    @Column(name = "payment_method", length = 20)
+    private String paymentMethod;
+
+    @Column(name = "customer_document", length = 14)
+    private String customerDocument;
+
+    @Column(name = "bling_order_id", unique = true)
+    private Long blingOrderId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "bling_sync_status", length = 20)
+    private BlingSyncStatus blingSyncStatus;
+
+    @Column(name = "bling_sync_attempts", nullable = false)
+    private int blingSyncAttempts = 0;
+
+    @Column(name = "bling_sync_error", length = 500)
+    private String blingSyncError;
+
+    @Column(name = "bling_sync_started_at")
+    private LocalDateTime blingSyncStartedAt;
+
+    @Column(name = "bling_synced_at")
+    private LocalDateTime blingSyncedAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
     private List<OrderItem> items = new ArrayList<>();
 
@@ -118,6 +146,20 @@ public class Order {
                 && !hasActivePaymentAttempt()
                 && deadline != null
                 && LocalDateTime.now().isBefore(deadline);
+    }
+
+    /**
+     * Única porta de entrada para PAID: marca o pagamento e coloca o pedido na fila de envio ao Bling.
+     * paidAt vem de fora para o teste conseguir verificar a data exata.
+     */
+    public void markAsPaid(LocalDateTime paidAt) {
+        if (status != OrderStatus.PENDING) {
+            throw new IllegalStateException(
+                    "Só pedido PENDING pode ser marcado como pago (atual: " + status + ")");
+        }
+        this.status = OrderStatus.PAID;
+        this.paidAt = paidAt;
+        this.blingSyncStatus = BlingSyncStatus.PENDING;
     }
 
     public LocalDateTime getPaymentDeadline() {
