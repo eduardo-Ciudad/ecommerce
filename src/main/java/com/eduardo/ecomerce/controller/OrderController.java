@@ -6,6 +6,7 @@ import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
 import com.eduardo.ecomerce.infra.security.SecurityUtils;
 import com.eduardo.ecomerce.service.OrderService;
+import com.eduardo.ecomerce.service.bling.BlingOrderSyncService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -28,6 +29,7 @@ import java.util.UUID;
 public class OrderController {
 
     private final OrderService orderService;
+    private final BlingOrderSyncService blingOrderSyncService;
 
     @PostMapping
     @Operation(summary = "Criar pedido", description = "Cria um novo pedido a partir dos itens do carrinho do usuário autenticado")
@@ -79,6 +81,19 @@ public class OrderController {
     public ResponseEntity<PageResponse<OrderOutput>> findAllAdmin (
             @PageableDefault(size = 20) Pageable pageable) {
         return ResponseEntity.ok(orderService.findAll(pageable));
+    }
+
+    @PostMapping("/admin/{id}/bling/resend")
+    @Operation(summary = "Reenviar pedido ao Bling", description = "Reenvia ao Bling um pedido pago que falhou ou não foi enviado. Requer perfil ADMIN.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Reenvio executado; o resultado está em bling.status"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão"),
+            @ApiResponse(responseCode = "404", description = "Pedido não encontrado"),
+            @ApiResponse(responseCode = "422", description = "Envio desligado ou pedido não pode ser reenviado")
+    })
+    public ResponseEntity<OrderOutput> resendToBling(@PathVariable UUID id) {
+        blingOrderSyncService.resend(id);
+        return ResponseEntity.ok(orderService.findByIdForAdmin(id));
     }
 
     @PutMapping("/{id}/cancel")

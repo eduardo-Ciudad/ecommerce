@@ -5,6 +5,8 @@ import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.eduardo.ecomerce.infra.bling.BlingIntegrationException;
 import com.eduardo.ecomerce.infra.bling.BlingOrderProperties;
+import com.eduardo.ecomerce.infra.exception.BusinessException;
+import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import com.eduardo.ecomerce.service.BlingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,6 +31,7 @@ import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -348,6 +351,52 @@ class BlingOrderSyncServiceTest {
 
         assertThatCode(() -> service.sync(orderId)).doesNotThrowAnyException();
         verify(orderRepository).markBlingFailed(orderId, "Bling fora do ar");
+    }
+
+    // ---------- resend (admin) ----------
+
+    @Test
+    void resend_desabilitado_lancaBusinessExceptionSemResetar() {
+        assertThatThrownBy(() -> newService(false).resend(orderId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("desligado");
+        verifyNoInteractions(orderRepository, blingClient, blingService);
+    }
+
+    @Test
+    void resend_pedidoInexistente_lancaResourceNotFound() {
+        when(orderRepository.existsById(orderId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.resend(orderId)).isInstanceOf(ResourceNotFoundException.class);
+        verify(orderRepository, never()).resetBlingSyncForResend(any());
+        verifyNoInteractions(blingClient);
+    }
+
+    @Test
+    void resend_pedidoNaoElegivel_lancaBusinessExceptionSemSync() {
+        when(orderRepository.existsById(orderId)).thenReturn(true);
+        when(orderRepository.resetBlingSyncForResend(orderId)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.resend(orderId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("não pode ser reenviado");
+        verify(orderRepository, never()).claimForBlingSync(any(), any(), any());
+        verifyNoInteractions(blingClient);
+    }
+
+    @Test
+    void resend_elegivel_resetaESincronizaRetornandoResultado() {
+        when(orderRepository.existsById(orderId)).thenReturn(true);
+        when(orderRepository.resetBlingSyncForResend(orderId)).thenReturn(1);
+        order.setBlingOrderId(SALE_ORDER_ID);
+
+        BlingSyncOutcome outcome = service.resend(orderId);
+
+        assertThat(outcome).isEqualTo(BlingSyncOutcome.SENT);
+        InOrder inOrder = inOrder(orderRepository);
+        inOrder.verify(orderRepository).resetBlingSyncForResend(orderId);
+        inOrder.verify(orderRepository).claimForBlingSync(eq(orderId), any(), any());
+        inOrder.verify(orderRepository).markBlingSent(orderId, NOW);
     }
 
     @Test

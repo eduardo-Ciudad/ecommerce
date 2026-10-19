@@ -23,6 +23,7 @@ import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.email.EmailService;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
+import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -362,6 +363,72 @@ class OrderServiceTest {
         assertThat(result.content()).extracting(OrderOutput::userId)
                 .containsExactly(firstUser.getId(), secondUser.getId());
         verify(orderRepository).findAll(pageable);
+    }
+
+    @Test
+    void findAll_admin_trazInformacoesDoBling() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        Order order = orderFor(user);
+        order.setStatus(OrderStatus.PAID);
+        order.setBlingSyncStatus(com.eduardo.ecomerce.domain.order.BlingSyncStatus.FAILED);
+        order.setBlingOrderId(999L);
+        order.setBlingSyncAttempts(2);
+        order.setBlingSyncError("HTTP 400: produto inválido");
+        LocalDateTime syncedAt = LocalDateTime.of(2026, 10, 19, 16, 0);
+        order.setBlingSyncedAt(syncedAt);
+        PageRequest pageable = PageRequest.of(0, 20);
+        when(orderRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(order), pageable, 1));
+
+        OrderOutput output = orderService.findAll(pageable).content().get(0);
+
+        assertThat(output.bling()).isNotNull();
+        assertThat(output.bling().status()).isEqualTo(com.eduardo.ecomerce.domain.order.BlingSyncStatus.FAILED);
+        assertThat(output.bling().blingOrderId()).isEqualTo(999L);
+        assertThat(output.bling().attempts()).isEqualTo(2);
+        assertThat(output.bling().error()).isEqualTo("HTTP 400: produto inválido");
+        assertThat(output.bling().syncedAt()).isEqualTo(syncedAt);
+    }
+
+    @Test
+    void findByUserId_cliente_naoExpoeInformacoesDoBling() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        Order order = orderFor(user);
+        order.setBlingSyncStatus(com.eduardo.ecomerce.domain.order.BlingSyncStatus.FAILED);
+        order.setBlingSyncError("erro interno do Bling");
+        PageRequest pageable = PageRequest.of(0, 20);
+        when(userRepository.existsById(user.getId())).thenReturn(true);
+        when(orderRepository.findByUserId(user.getId(), pageable))
+                .thenReturn(new PageImpl<>(List.of(order), pageable, 1));
+
+        OrderOutput output = orderService.findByUserId(user.getId(), pageable).content().get(0);
+
+        assertThat(output.bling()).isNull();
+    }
+
+    @Test
+    void findByIdForAdmin_encontrado_trazBling() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        Order order = orderFor(user);
+        order.setBlingSyncStatus(com.eduardo.ecomerce.domain.order.BlingSyncStatus.SENT);
+        order.setBlingOrderId(999L);
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+
+        OrderOutput output = orderService.findByIdForAdmin(order.getId());
+
+        assertThat(output.id()).isEqualTo(order.getId());
+        assertThat(output.bling().status()).isEqualTo(com.eduardo.ecomerce.domain.order.BlingSyncStatus.SENT);
+        assertThat(output.bling().blingOrderId()).isEqualTo(999L);
+    }
+
+    @Test
+    void findByIdForAdmin_inexistente_lancaResourceNotFound() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> orderService.findByIdForAdmin(id));
     }
 
     private Order orderFor(User user) {

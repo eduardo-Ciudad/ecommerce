@@ -215,6 +215,56 @@ class OrderRepositoryTest {
                 sent.getId(), legacy.getId(), cancelled.getId());
     }
 
+    // ----- resetBlingSyncForResend -----
+
+    @Test
+    void resetBlingSyncForResend_failed_voltaParaPendingZerandoTentativasEErro() {
+        Order order = persistBlingOrder(OrderStatus.PAID, BlingSyncStatus.FAILED);
+        setBlingSyncAttempts(order.getId(), MAX_ATTEMPTS);
+        orderRepository.markBlingFailed(order.getId(), "HTTP 400");
+
+        int updated = orderRepository.resetBlingSyncForResend(order.getId());
+
+        assertThat(updated).isEqualTo(1);
+        Order reloaded = reload(order);
+        assertThat(reloaded.getBlingSyncStatus()).isEqualTo(BlingSyncStatus.PENDING);
+        assertThat(reloaded.getBlingSyncAttempts()).isZero();
+        assertThat(reloaded.getBlingSyncError()).isNull();
+    }
+
+    @Test
+    void resetBlingSyncForResend_pedidoAntigoComStatusNulo_entraNaFila() {
+        Order order = persistBlingOrder(OrderStatus.PAID, null);
+
+        assertThat(orderRepository.resetBlingSyncForResend(order.getId())).isEqualTo(1);
+        assertThat(reload(order).getBlingSyncStatus()).isEqualTo(BlingSyncStatus.PENDING);
+    }
+
+    @Test
+    void resetBlingSyncForResend_pending_permite() {
+        Order order = persistBlingOrder(OrderStatus.PAID, BlingSyncStatus.PENDING);
+
+        assertThat(orderRepository.resetBlingSyncForResend(order.getId())).isEqualTo(1);
+    }
+
+    @Test
+    void resetBlingSyncForResend_sentOuProcessing_naoPermite() {
+        Order sent = persistBlingOrder(OrderStatus.PAID, BlingSyncStatus.SENT);
+        Order processing = persistBlingOrder(OrderStatus.PAID, BlingSyncStatus.PROCESSING);
+
+        assertThat(orderRepository.resetBlingSyncForResend(sent.getId())).isZero();
+        assertThat(orderRepository.resetBlingSyncForResend(processing.getId())).isZero();
+        assertThat(reload(sent).getBlingSyncStatus()).isEqualTo(BlingSyncStatus.SENT);
+        assertThat(reload(processing).getBlingSyncStatus()).isEqualTo(BlingSyncStatus.PROCESSING);
+    }
+
+    @Test
+    void resetBlingSyncForResend_pedidoNaoPago_naoPermite() {
+        Order order = persistBlingOrder(OrderStatus.PENDING, null);
+
+        assertThat(orderRepository.resetBlingSyncForResend(order.getId())).isZero();
+    }
+
     // ----- findWithItemsById -----
 
     @Test

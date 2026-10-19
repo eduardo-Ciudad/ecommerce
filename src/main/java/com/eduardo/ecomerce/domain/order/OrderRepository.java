@@ -90,6 +90,25 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
             """)
     int markBlingFailed(@Param("id") UUID id, @Param("error") String error);
 
+    /**
+     * Reenvio manual pelo admin: volta o pedido para PENDING zerando tentativas e erro.
+     * Permitido para FAILED, PENDING e nulo (pedido pago antes da feature); SENT e PROCESSING ficam de fora.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("""
+            UPDATE Order o
+               SET o.blingSyncStatus = com.eduardo.ecomerce.domain.order.BlingSyncStatus.PENDING,
+                   o.blingSyncAttempts = 0,
+                   o.blingSyncError = NULL
+             WHERE o.id = :id
+               AND o.status = com.eduardo.ecomerce.domain.order.OrderStatus.PAID
+               AND (o.blingSyncStatus IS NULL
+                    OR o.blingSyncStatus IN (com.eduardo.ecomerce.domain.order.BlingSyncStatus.PENDING,
+                                             com.eduardo.ecomerce.domain.order.BlingSyncStatus.FAILED))
+            """)
+    int resetBlingSyncForResend(@Param("id") UUID id);
+
     /** Fila do scheduler: pendentes/falhas abaixo do limite de tentativas e PROCESSING travado. */
     @Query("""
             SELECT o.id FROM Order o

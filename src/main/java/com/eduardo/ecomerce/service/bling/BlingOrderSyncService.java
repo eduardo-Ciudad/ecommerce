@@ -4,6 +4,8 @@ import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.eduardo.ecomerce.infra.bling.BlingOrderProperties;
+import com.eduardo.ecomerce.infra.exception.BusinessException;
+import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import com.eduardo.ecomerce.service.BlingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -74,6 +76,25 @@ public class BlingOrderSyncService {
             orderRepository.markBlingFailed(orderId, truncate(errorMessage(e)));
             return BlingSyncOutcome.FAILED;
         }
+    }
+
+    /**
+     * Reenvio manual pelo admin: reseta as tentativas e envia na hora (síncrono).
+     * Diferente do sync, sinaliza com exceção quando o reenvio não é possível.
+     */
+    public BlingSyncOutcome resend(UUID orderId) {
+        if (!properties.enabled()) {
+            throw new BusinessException("Envio de pedidos ao Bling está desligado");
+        }
+        if (!orderRepository.existsById(orderId)) {
+            throw new ResourceNotFoundException("Pedido não encontrado");
+        }
+        if (orderRepository.resetBlingSyncForResend(orderId) == 0) {
+            throw new BusinessException(
+                    "Pedido não pode ser reenviado ao Bling (precisa estar pago e não enviado/em envio)");
+        }
+        log.info("Reenvio manual do pedido {} ao Bling solicitado pelo admin", orderId);
+        return sync(orderId);
     }
 
     private Long findExistingSaleOrder(Order order) {

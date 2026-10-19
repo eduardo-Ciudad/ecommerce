@@ -55,7 +55,7 @@ class EmailServiceTest {
                 "Centro", "Rio Preto", "SP",
                 List.of(item), LocalDateTime.now(),
                 null, BigDecimal.ZERO,
-                false, null
+                false, null, null
         );
     }
 
@@ -93,7 +93,7 @@ class EmailServiceTest {
                 "Centro", "Rio Preto", "SP",
                 List.of(coloredItem), LocalDateTime.now(),
                 null, BigDecimal.ZERO,
-                false, null
+                false, null, null
         );
         ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
 
@@ -117,7 +117,7 @@ class EmailServiceTest {
                 "Centro", "Rio Preto", "SP",
                 List.of(codedItem), LocalDateTime.now(),
                 null, BigDecimal.ZERO,
-                false, null
+                false, null, null
         );
         ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
 

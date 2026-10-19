@@ -11,6 +11,7 @@ import com.eduardo.ecomerce.service.AuthService;
 import com.eduardo.ecomerce.service.OrderService;
 import com.eduardo.ecomerce.service.PaymentService;
 import com.eduardo.ecomerce.service.ProductService;
+import com.eduardo.ecomerce.service.bling.BlingOrderSyncService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -66,6 +67,9 @@ class SecurityConfigAuthorizationTest {
     @MockitoBean
     private WebhookSignatureValidator webhookSignatureValidator;
 
+    @MockitoBean
+    private BlingOrderSyncService blingOrderSyncService;
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("authorizationMatrix")
     @DisplayName("Deve preservar a matriz de autorização dos principais endpoints")
@@ -102,6 +106,34 @@ class SecurityConfigAuthorizationTest {
                 .andExpect(jsonPath("$.content[1].userId").value(secondUser.toString()));
     }
 
+    @Test
+    @DisplayName("POST /orders/admin/{id}/bling/resend sem autenticação retorna 401")
+    void blingResendRejectsAnonymous() throws Exception {
+        mockMvc.perform(post("/orders/admin/" + UUID.randomUUID() + "/bling/resend"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("POST /orders/admin/{id}/bling/resend bloqueia cliente sem papel ADMIN")
+    void blingResendRejectsNonAdminUser() throws Exception {
+        mockMvc.perform(post("/orders/admin/" + UUID.randomUUID() + "/bling/resend")
+                        .with(user("cliente").roles("CLIENT")))
+                .andExpect(status().isForbidden());
+        org.mockito.Mockito.verifyNoInteractions(blingOrderSyncService);
+    }
+
+    @Test
+    @DisplayName("POST /orders/admin/{id}/bling/resend permite ADMIN e devolve o pedido atualizado")
+    void blingResendAllowsAdmin() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        when(orderService.findByIdForAdmin(orderId)).thenReturn(orderOutput(orderId, UUID.randomUUID()));
+
+        mockMvc.perform(post("/orders/admin/" + orderId + "/bling/resend").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(orderId.toString()));
+        org.mockito.Mockito.verify(blingOrderSyncService).resend(orderId);
+    }
+
     private static OrderOutput orderOutput(UUID orderId, UUID userId) {
         return new OrderOutput(
                 orderId, userId, java.math.BigDecimal.TEN,
@@ -110,7 +142,7 @@ class SecurityConfigAuthorizationTest {
                 null, null, null, null, null, null, null, null,
                 List.of(), java.time.LocalDateTime.now(),
                 null, java.math.BigDecimal.ZERO,
-                false, null
+                false, null, null
         );
     }
 

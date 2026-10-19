@@ -17,6 +17,7 @@ import com.eduardo.ecomerce.domain.user.User;
 import com.eduardo.ecomerce.domain.user.UserRepository;
 import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
 import com.eduardo.ecomerce.dto.output.common.PageResponse;
+import com.eduardo.ecomerce.dto.output.order.BlingSyncInfo;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
 import com.eduardo.ecomerce.dto.output.orderitem.OrderItemOutput;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
@@ -159,7 +160,14 @@ public class OrderService {
     }
 
     public PageResponse<OrderOutput> findAll(Pageable pageable) {
-        return PageResponse.from(orderRepository.findAll(pageable).map(this::toOutput));
+        return PageResponse.from(orderRepository.findAll(pageable).map(this::toAdminOutput));
+    }
+
+    @Transactional(readOnly = true)
+    public OrderOutput findByIdForAdmin(UUID id) {
+        return orderRepository.findById(id)
+                .map(this::toAdminOutput)
+                .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado"));
     }
 
     @Transactional(readOnly = true)
@@ -287,7 +295,22 @@ public class OrderService {
 
 
 
+    private OrderOutput toAdminOutput(Order order) {
+        BlingSyncInfo bling = new BlingSyncInfo(
+                order.getBlingSyncStatus(),
+                order.getBlingOrderId(),
+                order.getBlingSyncAttempts(),
+                order.getBlingSyncError(),
+                order.getBlingSyncedAt()
+        );
+        return toOutput(order, bling);
+    }
+
     private OrderOutput toOutput(Order order) {
+        return toOutput(order, null);
+    }
+
+    private OrderOutput toOutput(Order order, BlingSyncInfo bling) {
         List<OrderItemOutput> items = order.getItems().stream()
                 .map(this::toItemOutput)
                 .toList();
@@ -314,7 +337,8 @@ public class OrderService {
                 order.getCouponCode(),
                 order.getDiscountAmount(),
                 order.canReceivePayment(),
-                toOffset(order.getPaymentDeadline())
+                toOffset(order.getPaymentDeadline()),
+                bling
         );
     }
 

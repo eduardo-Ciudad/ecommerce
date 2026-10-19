@@ -32,5 +32,6 @@ public record OrderOutput(
         String couponCode,
         BigDecimal discountAmount,
         boolean canPay,
-        OffsetDateTime paymentDeadline
+        OffsetDateTime paymentDeadline,
+        BlingSyncInfo bling // null fora das rotas de admin
 ) { }
