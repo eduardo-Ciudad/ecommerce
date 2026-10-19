@@ -1,5 +1,9 @@
 package com.eduardo.ecomerce.domain.order;
 
+import com.eduardo.ecomerce.domain.category.Category;
+import com.eduardo.ecomerce.domain.orderitem.OrderItem;
+import com.eduardo.ecomerce.domain.product.Product;
+import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.user.User;
 import com.eduardo.ecomerce.domain.user.UserRole;
 import jakarta.persistence.EntityManager;
@@ -209,6 +213,55 @@ class OrderRepositoryTest {
         assertThat(result).containsExactly(failed.getId(), stuck.getId(), pending.getId());
         assertThat(result).doesNotContain(recentProcessing.getId(), exhausted.getId(),
                 sent.getId(), legacy.getId(), cancelled.getId());
+    }
+
+    // ----- findWithItemsById -----
+
+    @Test
+    void findWithItemsById_carregaItensVarianteProdutoEUsuarioParaUsoForaDaSessao() {
+        Order order = persistBlingOrder(OrderStatus.PAID, BlingSyncStatus.PENDING);
+        persistItem(order, "Short Moletinho", 16702195792L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Order loaded = orderRepository.findWithItemsById(order.getId()).orElseThrow();
+        entityManager.clear(); // simula uso fora da transação/sessão (o sync roda sem tx aberta)
+
+        assertThat(loaded.getItems()).hasSize(1);
+        OrderItem item = loaded.getItems().get(0);
+        assertThat(item.getVariant().getBlingVariationId()).isEqualTo(16702195792L);
+        assertThat(item.getVariant().getProduct().getName()).isEqualTo("Short Moletinho");
+        assertThat(loaded.getUser().getEmail()).endsWith("@teste.com");
+    }
+
+    @Test
+    void findWithItemsById_idInexistente_vazio() {
+        assertThat(orderRepository.findWithItemsById(UUID.randomUUID())).isEmpty();
+    }
+
+    private void persistItem(Order order, String productName, Long blingVariationId) {
+        Category category = new Category();
+        category.setName("Categoria " + UUID.randomUUID());
+        entityManager.persist(category);
+
+        Product product = new Product();
+        product.setName(productName);
+        product.setCategory(category);
+        entityManager.persist(product);
+
+        ProductVariant variant = new ProductVariant();
+        variant.setProduct(product);
+        variant.setPrice(new BigDecimal("49.90"));
+        variant.setStock(10);
+        variant.setBlingVariationId(blingVariationId);
+        entityManager.persist(variant);
+
+        OrderItem item = new OrderItem();
+        item.setOrder(order);
+        item.setVariant(variant);
+        item.setQuantity(2);
+        item.setUnitPrice(new BigDecimal("49.90"));
+        entityManager.persist(item);
     }
 
     // ----- constraint -----

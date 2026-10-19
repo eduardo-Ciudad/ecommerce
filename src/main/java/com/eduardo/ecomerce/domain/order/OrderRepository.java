@@ -3,6 +3,7 @@ package com.eduardo.ecomerce.domain.order;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -32,6 +33,11 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     List<Order> findByStatusAndCreatedAtBefore(OrderStatus status, LocalDateTime cutoff);
 
     // ---------- Sync de pedidos site -> Bling ----------
+
+    /** Pedido com tudo que o payload do Bling usa já carregado (o envio roda fora de transação). */
+    @EntityGraph(attributePaths = {"user", "items", "items.variant", "items.variant.product"})
+    @Query("SELECT o FROM Order o WHERE o.id = :id")
+    Optional<Order> findWithItemsById(@Param("id") UUID id);
     // Os @Modifying têm @Transactional próprio: chamados fora de transação lançariam
     // TransactionRequiredException (mesmo bug já visto no reconcileRemovedProducts).
 

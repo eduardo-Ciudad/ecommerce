@@ -149,6 +149,11 @@ public class BlingService {
         return saveToken(response).getAccessToken();
     }
 
+    /** Executa uma chamada ao Bling com token válido; em 401 renova o token e tenta 1 vez de novo. */
+    public JsonNode callBling(Function<String, JsonNode> apiCall) {
+        return callWithRetry(new AtomicReference<>(getValidAccessToken()), apiCall);
+    }
+
     private JsonNode callWithRetry(AtomicReference<String> tokenRef, Function<String, JsonNode> apiCall) {
         try {
             return apiCall.apply(tokenRef.get());

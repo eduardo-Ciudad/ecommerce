@@ -13,6 +13,7 @@ import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepo
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
+import com.eduardo.ecomerce.infra.bling.BlingUnauthorizedException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +28,7 @@ import org.springframework.transaction.support.DefaultTransactionDefinition;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -244,6 +246,47 @@ class BlingServiceTest {
 
     private String colorOf(Object attributes) {
         return ReflectionTestUtils.invokeMethod(attributes, "color");
+    }
+
+    // ---------- callBling (usado pelo sync de pedidos) ----------
+
+    @Test
+    void callBling_tokenValido_executaChamadaComTokenERetornaResposta() {
+        validToken();
+        JsonNode expected = objectMapper.createObjectNode().put("ok", true);
+        List<String> tokensUsed = new ArrayList<>();
+
+        JsonNode result = service.callBling(token -> {
+            tokensUsed.add(token);
+            return expected;
+        });
+
+        assertThat(result).isSameAs(expected);
+        assertThat(tokensUsed).containsExactly("token");
+        verify(blingClient, never()).refreshAccessToken(any());
+    }
+
+    @Test
+    void callBling_401NaPrimeiraChamada_renovaTokenETentaDeNovoComTokenNovo() throws Exception {
+        validToken();
+        when(blingClient.refreshAccessToken("refresh")).thenReturn(json("""
+                {"access_token":"new-token","refresh_token":"new-refresh","expires_in":21600}
+                """));
+        when(blingTokenRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        JsonNode expected = objectMapper.createObjectNode().put("ok", true);
+        List<String> tokensUsed = new ArrayList<>();
+
+        JsonNode result = service.callBling(token -> {
+            tokensUsed.add(token);
+            if ("token".equals(token)) {
+                throw new BlingUnauthorizedException("expirado", null, 401, "invalid_token", "expirado");
+            }
+            return expected;
+        });
+
+        assertThat(result).isSameAs(expected);
+        assertThat(tokensUsed).containsExactly("token", "new-token");
+        verify(blingClient).refreshAccessToken("refresh");
     }
 
     private void validToken() {
