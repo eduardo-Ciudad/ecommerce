@@ -22,4 +22,15 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
             """)
     List<ProductVariant> findAllForFeed();
 
+    // ---------- Dashboard do admin (só variantes de produto ativo, as que aparecem na loja) ----------
+
+    @Query("SELECT COUNT(v) FROM ProductVariant v WHERE v.product.active = true")
+    long countOfActiveProducts();
+
+    @Query("SELECT COUNT(v) FROM ProductVariant v WHERE v.product.active = true AND v.stock <= 0")
+    long countOutOfStockOfActiveProducts();
+
+    @Query("SELECT COUNT(v) FROM ProductVariant v WHERE v.product.active = true AND (v.gtin IS NULL OR v.gtin = '')")
+    long countWithoutGtinOfActiveProducts();
+
 }

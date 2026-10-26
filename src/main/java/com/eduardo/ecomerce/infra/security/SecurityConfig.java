@@ -107,6 +107,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/orders/admin").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/orders/admin/*/bling/resend").hasRole("ADMIN")
 
+                        // Dashboard do admin
+                        .requestMatchers("/admin/**").hasRole("ADMIN")
+
                         // Administração do Bling
                         .requestMatchers("/bling/sync/**").hasRole("ADMIN")
 

@@ -18,6 +18,13 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     boolean existsByCategoryId(UUID categoryId);
     Optional<Product> findByBlingProductId(Long blingProductId);
 
+    // ---------- Dashboard do admin ----------
+
+    long countByActive(boolean active);
+
+    @Query("SELECT COUNT(p) FROM Product p WHERE p.active = true AND (p.imageUrl IS NULL OR p.imageUrl = '')")
+    long countActiveWithoutImage();
+
     @Modifying
     @Query("UPDATE Product p SET p.active = false WHERE p.blingProductId IS NOT NULL AND p.active = true AND p.blingProductId NOT IN :seenIds")
     int deactivateMissingFromBling(@Param("seenIds") Collection<Long> seenIds);

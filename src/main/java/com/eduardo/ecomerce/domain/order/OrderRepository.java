@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,6 +32,15 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     Optional<Order> findByIdAndUserIdForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
 
     List<Order> findByStatusAndCreatedAtBefore(OrderStatus status, LocalDateTime cutoff);
+
+    // ---------- Dashboard do admin ----------
+
+    long countByStatus(OrderStatus status);
+
+    long countByBlingSyncStatus(BlingSyncStatus status);
+
+    List<Order> findByStatusInAndPaidAtGreaterThanEqualAndPaidAtLessThan(
+            Collection<OrderStatus> statuses, LocalDateTime from, LocalDateTime to);
 
     // ---------- Sync de pedidos site -> Bling ----------
 
