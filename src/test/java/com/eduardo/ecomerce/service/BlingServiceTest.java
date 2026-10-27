@@ -179,8 +179,40 @@ class BlingServiceTest {
     }
 
     @Test
-    void extractVariationAttributesIgnoresUnknownAttributesAndColonsInsideValues() throws Exception {
+    void extractVariationAttributesTreatsPrintAsColorAndKeepsColonsInsideValues() throws Exception {
         Object attributes = extractVariationAttributes("Estampa:Dino:Azul;Tamanho:8");
+
+        assertThat(sizeOf(attributes)).isEqualTo("8");
+        assertThat(colorOf(attributes)).isEqualTo("Dino:Azul");
+    }
+
+    @Test
+    void extractVariationAttributesReadsPrintAndSizeFromRealBlingFormat() throws Exception {
+        Object attributes = extractVariationAttributes("estampa:vermelha poá;tamanho:1");
+
+        assertThat(sizeOf(attributes)).isEqualTo("1");
+        assertThat(colorOf(attributes)).isEqualTo("vermelha poá");
+    }
+
+    @Test
+    void extractVariationAttributesReadsPrintWhenSizeComesFirst() throws Exception {
+        Object attributes = extractVariationAttributes("tamanho:4;estampa:bananas");
+
+        assertThat(sizeOf(attributes)).isEqualTo("4");
+        assertThat(colorOf(attributes)).isEqualTo("bananas");
+    }
+
+    @Test
+    void extractVariationAttributesCombinesColorAndPrintWhenBothArePresent() throws Exception {
+        Object attributes = extractVariationAttributes("Cor:Rosa;Estampa:Dino;Tamanho:2");
+
+        assertThat(sizeOf(attributes)).isEqualTo("2");
+        assertThat(colorOf(attributes)).isEqualTo("Rosa / Dino");
+    }
+
+    @Test
+    void extractVariationAttributesStillIgnoresUnknownAttributes() throws Exception {
+        Object attributes = extractVariationAttributes("Voltagem:220v;Tamanho:8");
 
         assertThat(sizeOf(attributes)).isEqualTo("8");
         assertThat(colorOf(attributes)).isNull();
@@ -231,6 +263,43 @@ class BlingServiceTest {
         assertThat(saved.getColor()).isEqualTo("Preto");
         assertThat(saved.getBlingVariationId()).isEqualTo(501L);
         assertThat(saved.getStock()).isEqualTo(3);
+    }
+
+    @Test
+    void syncProductsPersistsPrintAsColorOnVariant() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = new Category();
+        category.setBlingCategoryId(77L);
+
+        when(blingClient.listProducts("token", 1)).thenReturn(json("""
+            {"data":[
+              {"id":600,"nome":"Bermuda Ciclista Estampada","codigo":"PAI-600","preco":"24.99","formato":"V"},
+              {"id":601,"nome":"Bermuda Ciclista Vermelha Poa 1","codigo":"SKU-601","preco":"24.99","formato":"S","idProdutoPai":600}
+            ]}
+            """));
+        when(blingClient.listProducts("token", 2)).thenReturn(json("""
+            {"data":[]}
+            """));
+        when(blingClient.getProductById("token", 601L)).thenReturn(json("""
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":2},
+            "variacao":{"nome":"estampa:vermelha poá;tamanho:1"}}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(600L)).thenReturn(Optional.empty());
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productVariantRepository.findByBlingVariationId(601L)).thenReturn(Optional.empty());
+        when(productVariantRepository.findBySku("SKU-601")).thenReturn(Optional.empty());
+
+        service.syncProducts();
+
+        ArgumentCaptor<ProductVariant> captor = ArgumentCaptor.forClass(ProductVariant.class);
+        verify(productVariantRepository).save(captor.capture());
+        ProductVariant saved = captor.getValue();
+        assertThat(saved.getSize()).isEqualTo("1");
+        assertThat(saved.getColor()).isEqualTo("vermelha poá");
+        assertThat(saved.getBlingVariationId()).isEqualTo(601L);
     }
 
     private Object extractVariationAttributes(String variationName) {

@@ -685,13 +685,24 @@ public class BlingService {
         Map<String, String> attributes = parseVariationName(raw);
 
         String size = limitLength(attributes.get("tamanho"), "tamanho");
-        String color = limitLength(attributes.get("cor"), "cor");
+        String color = limitLength(resolveColor(attributes), "cor");
 
         if (size == null && color == null) {
             log.warn("Variação do Bling sem atributo de tamanho ou cor reconhecido: \"{}\"", raw);
         }
 
         return new VariationAttributes(size, color);
+    }
+
+
+    private String resolveColor(Map<String, String> attributes) {
+        String color = attributes.get("cor");
+        String print = attributes.get("estampa");
+
+        if (color != null && print != null) {
+            return color + " / " + print;
+        }
+        return color != null ? color : print;
     }
 
     private Map<String, String> parseVariationName(String raw) {
