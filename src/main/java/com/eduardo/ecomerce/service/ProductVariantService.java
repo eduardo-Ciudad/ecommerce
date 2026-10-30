@@ -74,6 +74,7 @@ public class ProductVariantService {
                 variant.getSize(),
                 variant.getColor(),
                 variant.getGtin(),
+                variant.getSku(),
                 variant.getPrice(),
                 variant.getStock(),
                 variant.getCreatedAt()

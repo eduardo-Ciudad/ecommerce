@@ -2,7 +2,10 @@ package com.eduardo.ecomerce.infra.exception;
 
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.DisplayName;
+import org.apache.catalina.connector.ClientAbortException;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -64,5 +67,22 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
         assertThat(response.getBody()).containsEntry("error", "Estoque insuficiente");
+    }
+
+    @Test
+    @DisplayName("Cliente que cancela a requisição cai no handler silencioso, não no 'Erro inesperado'")
+    void clientAbort_resolvidoPeloHandlerProprio() {
+        ExceptionHandlerMethodResolver resolver = new ExceptionHandlerMethodResolver(GlobalExceptionHandler.class);
+
+        assertThat(resolver.resolveMethod(new ClientAbortException()).getName()).isEqualTo("handleClientAbort");
+        assertThat(resolver.resolveMethod(new AsyncRequestNotUsableException("conexão fechada")).getName())
+                .isEqualTo("handleClientAbort");
+        assertThat(resolver.resolveMethod(new RuntimeException("x")).getName()).isEqualTo("handleGeneric");
+    }
+
+    @Test
+    @DisplayName("Handler de cancelamento não lança exceção")
+    void clientAbort_naoLanca() {
+        handler.handleClientAbort(new ClientAbortException("broken pipe"));
     }
 }

@@ -257,6 +257,7 @@ class ProductServiceTest {
         variant.setProduct(product);
         variant.setSize("4");
         variant.setColor("Rosa Neon");
+        variant.setSku("SHORT-ROSA-4");
         variant.setPrice(new java.math.BigDecimal("34.99"));
         variant.setStock(2);
         product.getVariants().add(variant);
@@ -268,5 +269,6 @@ class ProductServiceTest {
         assertThat(output.variants()).hasSize(1);
         assertThat(output.variants().get(0).size()).isEqualTo("4");
         assertThat(output.variants().get(0).color()).isEqualTo("Rosa Neon");
+        assertThat(output.variants().get(0).sku()).isEqualTo("SHORT-ROSA-4");
     }
 }

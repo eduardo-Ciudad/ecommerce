@@ -128,7 +128,7 @@ public class ProductService {
 
     private ProductOutput toOutput(Product product) {
         List<ProductVariantOutput> variants = product.getVariants().stream()
-                .map(v -> new ProductVariantOutput(v.getId(), v.getSize(), v.getColor(), v.getGtin(),
+                .map(v -> new ProductVariantOutput(v.getId(), v.getSize(), v.getColor(), v.getGtin(), v.getSku(),
                         v.getPrice(), v.getStock(), v.getCreatedAt()))
                 .toList();
 

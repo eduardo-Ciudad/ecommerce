@@ -88,6 +88,23 @@ class ProductVariantServiceTest {
     }
 
     @Test
+    void updateReturnsSkuAndGtinOfExistingVariant() {
+        UUID variantId = UUID.randomUUID();
+        ProductVariant existing = new ProductVariant();
+        existing.setId(variantId);
+        existing.setSku("VR-P");
+        existing.setGtin("7891234567895");
+        ProductVariantInput input = new ProductVariantInput("P", null, new BigDecimal("29.90"), 3);
+
+        when(productVariantRepository.findById(variantId)).thenReturn(Optional.of(existing));
+
+        ProductVariantOutput output = productVariantService.update(variantId, input);
+
+        assertThat(output.sku()).isEqualTo("VR-P");
+        assertThat(output.gtin()).isEqualTo("7891234567895");
+    }
+
+    @Test
     void updateKeepsExistingColorWhenInputColorIsNull() {
         UUID variantId = UUID.randomUUID();
         ProductVariant existing = new ProductVariant();

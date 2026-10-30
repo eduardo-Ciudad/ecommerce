@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.infra.exception;
 
 import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.HashMap;
@@ -68,6 +70,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleMissingParameter(MissingServletRequestParameterException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("error", "Parâmetro obrigatório ausente: " + ex.getParameterName()));
+    }
+
+    /**
+     * O cliente fechou a conexão antes da resposta terminar (ex.: a busca da venda no balcão cancela a
+     * anterior com AbortController). Não é erro do servidor e não há para quem responder.
+     */
+    @ExceptionHandler({ClientAbortException.class, AsyncRequestNotUsableException.class})
+    public void handleClientAbort(Exception ex) {
+        log.debug("Cliente cancelou a requisição antes da resposta: {}", ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

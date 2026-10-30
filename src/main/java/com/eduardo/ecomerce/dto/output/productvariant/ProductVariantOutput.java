@@ -9,6 +9,7 @@ public record ProductVariantOutput(
         String size,
         String color,
         String gtin,
+        String sku,
         BigDecimal price,
         Integer stock,
         LocalDateTime createdAt
