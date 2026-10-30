@@ -29,6 +29,57 @@ class BlingOrderPropertiesTest {
         ));
     }
 
+    private static BlingOrderProperties withLocal() {
+        return bind(Map.ofEntries(
+                Map.entry("bling.orders.payment-method.pix", "9042991"),
+                Map.entry("bling.orders.payment-method.credit-card", "11412042"),
+                Map.entry("bling.orders.local.contact-id", "777"),
+                Map.entry("bling.orders.local.situation-id", "9"),
+                Map.entry("bling.orders.local.payment-method.cash", "1001"),
+                Map.entry("bling.orders.local.payment-method.local-pix", "1002"),
+                Map.entry("bling.orders.local.payment-method.card-machine", "1003"),
+                Map.entry("bling.orders.local.payment-method.payment-link", "1004"),
+                Map.entry("bling.orders.local.payment-method.store-credit", "1005")
+        ));
+    }
+
+    @Test
+    void bind_vendaLocal_contatoSituacaoEFormasDoBalcao() {
+        BlingOrderProperties props = withLocal();
+
+        assertThat(props.localContactId()).isEqualTo(777L);
+        assertThat(props.localSituationId()).isEqualTo(9L);
+        assertThat(props.paymentMethodIdFor("cash")).isEqualTo(1001L);
+        assertThat(props.paymentMethodIdFor("local_pix")).isEqualTo(1002L);
+        assertThat(props.paymentMethodIdFor("card_machine")).isEqualTo(1003L);
+        assertThat(props.paymentMethodIdFor("payment_link")).isEqualTo(1004L);
+        assertThat(props.paymentMethodIdFor("store_credit")).isEqualTo(1005L);
+        // o site continua igual
+        assertThat(props.paymentMethodIdFor("pix")).isEqualTo(9042991L);
+    }
+
+    @Test
+    void vendaLocal_naoConfigurada_falhaComMensagemClara() {
+        BlingOrderProperties props = full();
+
+        assertThatThrownBy(props::localContactId)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("contact-id");
+        assertThatThrownBy(() -> props.paymentMethodIdFor("store_credit"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("store_credit");
+    }
+
+    @Test
+    void vendaLocal_formaDoBalcaoSemId_falhaComMensagemClara() {
+        BlingOrderProperties props = bind(Map.of(
+                "bling.orders.local.contact-id", "777",
+                "bling.orders.local.payment-method.cash", "1001"));
+
+        assertThatThrownBy(() -> props.paymentMethodIdFor("store_credit"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     void bind_chavesKebabCase_lidasNosCamposCertos() {
         BlingOrderProperties props = full();

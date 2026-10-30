@@ -16,7 +16,10 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.ZoneId;
+import com.eduardo.ecomerce.domain.order.OrderChannel;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,11 +41,7 @@ class BlingOrderPayloadMapperTest {
 
     @BeforeEach
     void setUp() {
-        BlingOrderProperties properties = new BlingOrderProperties(
-                true, 206333320L, 15L,
-                new BlingOrderProperties.PaymentMethods(9042991L, 11412042L),
-                5, Duration.ofMinutes(15));
-        mapper = new BlingOrderPayloadMapper(properties, new ObjectMapper());
+        mapper = new BlingOrderPayloadMapper(properties(), new ObjectMapper(), Clock.systemUTC());
 
         User user = new User();
         user.setName("Maria Compradora");
@@ -98,6 +97,131 @@ class BlingOrderPayloadMapperTest {
         item.setSize(size);
         item.setSku(snapshotSku);
         return item;
+    }
+
+    private static BlingOrderProperties properties() {
+        return new BlingOrderProperties(
+                true, 206333320L, 15L,
+                new BlingOrderProperties.PaymentMethods(9042991L, 11412042L),
+                5, Duration.ofMinutes(15),
+                new BlingOrderProperties.Local(777L, 9L, new BlingOrderProperties.LocalPaymentMethods(
+                        1001L, 1002L, 1003L, 1004L, 1005L)));
+    }
+
+    private void asLocalSale(String paymentMethod, String customerName) {
+        order.setChannel(OrderChannel.LOCAL);
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setPaymentMethod(paymentMethod);
+        order.setPaymentId(null);
+        order.setCustomerDocument(null);
+        order.setCustomerName(customerName);
+        order.setCouponCode(null);
+        order.setShippingMethod(null);
+        order.setShippingPrice(null);
+        order.setShippingDeadlineDays(null);
+        order.setRecipientName(null);
+        order.setRecipientCep(null);
+        order.setRecipientStreet(null);
+        order.setRecipientNumber(null);
+        order.setRecipientComplement(null);
+        order.setRecipientNeighborhood(null);
+        order.setRecipientCity(null);
+        order.setRecipientState(null);
+        // 2 x 49.90 + 29.90 - 9.98
+        order.setTotal(new BigDecimal("119.72"));
+    }
+
+    // ================= venda local =================
+
+    @Test
+    void vendaLocal_situacaoAtendidoMesmaLojaEContatoInformado() {
+        asLocalSale("store_credit", "Cris vizinha");
+
+        JsonNode sale = sale();
+
+        assertThat(sale.path("situacao").path("id").asLong()).isEqualTo(9L);
+        assertThat(sale.path("loja").path("id").asLong()).isEqualTo(206333320L);
+        assertThat(sale.path("numeroLoja").asText()).isEqualTo(order.getId().toString());
+        assertThat(sale.path("contato").path("id").asLong()).isEqualTo(CONTACT_ID);
+    }
+
+    @Test
+    void vendaLocal_semTransporteEDataPrevistaIgualAData() {
+        asLocalSale("cash", null);
+
+        JsonNode sale = sale();
+
+        assertThat(sale.has("transporte")).isFalse();
+        assertThat(sale.path("dataPrevista").asText()).isEqualTo(sale.path("data").asText());
+    }
+
+    @Test
+    void vendaLocal_parcelaComFormaDoBalcaoEValorTotal() {
+        asLocalSale("store_credit", "Cris vizinha");
+
+        JsonNode installment = sale().path("parcelas").get(0);
+
+        assertThat(installment.path("formaPagamento").path("id").asLong()).isEqualTo(1005L);
+        assertThat(installment.path("valor").decimalValue()).isEqualByComparingTo("119.72");
+        assertThat(installment.path("observacoes").asText()).isEqualTo("Venda loja física · Fiado");
+    }
+
+    @Test
+    void vendaLocal_descontoEmReais() {
+        asLocalSale("card_machine", null);
+
+        JsonNode discount = sale().path("desconto");
+
+        assertThat(discount.path("valor").decimalValue()).isEqualByComparingTo("9.98");
+        assertThat(discount.path("unidade").asText()).isEqualTo("REAL");
+    }
+
+    @Test
+    void vendaLocal_observacoesComNomeEPagamentoSemMercadoPago() {
+        asLocalSale("local_pix", "Cris vizinha");
+
+        String notes = sale().path("observacoesInternas").asText();
+
+        assertThat(notes).contains("Venda loja física", "Cliente: Cris vizinha", "Pagamento: Pix");
+        assertThat(notes).doesNotContain("Mercado Pago");
+    }
+
+    @Test
+    void vendaLocal_anonima_observacaoClienteNaoInformado() {
+        asLocalSale("cash", null);
+
+        assertThat(sale().path("observacoesInternas").asText()).contains("Cliente: não informado");
+    }
+
+    @Test
+    void vendaLocal_totalBate_semWarnDeDivergencia(CapturedOutput output) {
+        asLocalSale("cash", null);
+
+        sale();
+
+        assertThat(output).doesNotContain("Total divergente");
+    }
+
+    // ================= data na zona da loja =================
+
+    @Test
+    void data_pagoAsNoveEMeiaDaNoiteEmBrasilia_usaODiaDaLojaNaoODiaUtc() {
+        // 01:30 UTC de 31/10 = 22:30 de 30/10 em São Paulo
+        order.setPaidAt(LocalDateTime.of(2026, 10, 31, 1, 30));
+
+        JsonNode sale = sale();
+
+        assertThat(sale.path("data").asText()).isEqualTo("2026-10-30");
+        assertThat(sale.path("dataSaida").asText()).isEqualTo("2026-10-30");
+        assertThat(sale.path("parcelas").get(0).path("dataVencimento").asText()).isEqualTo("2026-10-30");
+    }
+
+    @Test
+    void data_clockJaNaZonaDaLoja_naoConverteDuasVezes() {
+        mapper = new BlingOrderPayloadMapper(properties(), new ObjectMapper(), Clock.system(ZoneId.of("America/Sao_Paulo")));
+        order.setPaidAt(LocalDateTime.of(2026, 10, 30, 23, 50));
+
+        assertThat(sale().path("data").asText()).isEqualTo("2026-10-30");
     }
 
     private JsonNode sale() {

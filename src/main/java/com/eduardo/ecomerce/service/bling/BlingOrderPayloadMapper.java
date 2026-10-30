@@ -1,5 +1,6 @@
 package com.eduardo.ecomerce.service.bling;
 
+import com.eduardo.ecomerce.domain.order.LocalPaymentMethod;
 import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
@@ -14,7 +15,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,9 +34,12 @@ public class BlingOrderPayloadMapper {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final int NAO_CONTRIBUINTE_ICMS = 9;
     private static final int FRETE_POR_CONTA_REMETENTE = 0;
+    /** paidAt é gravado na zona do clock (UTC no container); a data do pedido no Bling é a da loja. */
+    static final ZoneId STORE_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private final BlingOrderProperties properties;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     // ---------- Contato ----------
 
@@ -69,7 +75,7 @@ public class BlingOrderPayloadMapper {
         if (order.getPaidAt() == null) {
             throw new IllegalStateException("Pedido " + order.getId() + " sem paidAt: não pode ser enviado ao Bling");
         }
-        LocalDate date = order.getPaidAt().toLocalDate();
+        LocalDate date = storeDate(order);
         LocalDate expected = order.getShippingDeadlineDays() != null
                 ? date.plusDays(order.getShippingDeadlineDays())
                 : date;
@@ -82,7 +88,8 @@ public class BlingOrderPayloadMapper {
         sale.put("dataSaida", date.format(DATE));
         sale.put("dataPrevista", expected.format(DATE));
         sale.putObject("loja").put("id", properties.storeId());
-        sale.putObject("situacao").put("id", properties.situationId());
+        sale.putObject("situacao").put("id",
+                order.isLocalSale() ? properties.localSituationId() : properties.situationId());
         sale.putObject("contato").put("id", contactId);
 
         ArrayNode items = sale.putArray("itens");
@@ -98,13 +105,17 @@ public class BlingOrderPayloadMapper {
             discountNode.put("unidade", "REAL");
         }
 
-        sale.set("transporte", toTransport(order, shipping));
+        if (!order.isLocalSale()) {
+            sale.set("transporte", toTransport(order, shipping));
+        }
 
         ObjectNode installment = sale.putArray("parcelas").addObject();
         installment.put("dataVencimento", date.format(DATE));
         installment.put("valor", order.getTotal());
         installment.putObject("formaPagamento").put("id", properties.paymentMethodIdFor(order.getPaymentMethod()));
-        installment.put("observacoes", "Mercado Pago " + order.getPaymentId());
+        installment.put("observacoes", order.isLocalSale()
+                ? "Venda loja física · " + localPaymentLabel(order)
+                : "Mercado Pago " + order.getPaymentId());
 
         sale.put("observacoesInternas", internalNotes(order));
 
@@ -171,6 +182,13 @@ public class BlingOrderPayloadMapper {
     }
 
     private String internalNotes(Order order) {
+        if (order.isLocalSale()) {
+            StringBuilder notes = new StringBuilder()
+                    .append("Venda loja física GabiKids #").append(order.getId())
+                    .append(" · Cliente: ").append(firstNonBlank(order.getCustomerName(), "não informado"))
+                    .append(" · Pagamento: ").append(localPaymentLabel(order));
+            return notes.toString();
+        }
         StringBuilder notes = new StringBuilder()
                 .append("Pedido do site GabiKids #").append(order.getId())
                 .append(" · Pagamento Mercado Pago ").append(order.getPaymentId())
@@ -179,6 +197,15 @@ public class BlingOrderPayloadMapper {
             notes.append(" · Cupom ").append(order.getCouponCode());
         }
         return notes.toString();
+    }
+
+    private LocalDate storeDate(Order order) {
+        return order.getPaidAt().atZone(clock.getZone()).withZoneSameInstant(STORE_ZONE).toLocalDate();
+    }
+
+    private static String localPaymentLabel(Order order) {
+        String label = LocalPaymentMethod.labelFor(order.getPaymentMethod());
+        return label != null ? label : order.getPaymentMethod();
     }
 
     private String buyerName(Order order) {

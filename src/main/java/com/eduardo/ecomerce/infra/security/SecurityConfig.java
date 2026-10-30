@@ -106,6 +106,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/orders/*/status").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/orders/admin").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/orders/admin/*/bling/resend").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/orders/admin/local-sales").hasRole("ADMIN")
 
                         // Dashboard do admin
                         .requestMatchers("/admin/**").hasRole("ADMIN")

@@ -34,7 +34,9 @@ class BlingOrderRetrySchedulerTest {
         BlingOrderProperties properties = new BlingOrderProperties(
                 enabled, 206333320L, 15L,
                 new BlingOrderProperties.PaymentMethods(9042991L, 11412042L),
-                5, Duration.ofMinutes(15));
+                5, Duration.ofMinutes(15),
+                new BlingOrderProperties.Local(777L, 9L, new BlingOrderProperties.LocalPaymentMethods(
+                        1001L, 1002L, 1003L, 1004L, 1005L)));
         return new BlingOrderRetryScheduler(orderRepository, syncService, properties, clock);
     }
 

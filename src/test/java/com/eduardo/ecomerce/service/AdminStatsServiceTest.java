@@ -45,6 +45,65 @@ class AdminStatsServiceTest {
                 .thenReturn(List.of(orders));
     }
 
+    private Order localSale(LocalDateTime paidAtUtc, String total) {
+        Order order = paidOrder(paidAtUtc, total);
+        order.setChannel(com.eduardo.ecomerce.domain.order.OrderChannel.LOCAL);
+        order.setStatus(OrderStatus.DELIVERED);
+        return order;
+    }
+
+    @Test
+    void getStats_separaFaturamentoDoMesPorCanalMantendoOTotal() {
+        paidOrdersReturn(
+                paidOrder(LocalDateTime.of(2026, 10, 10, 15, 0), "100.00"),
+                paidOrder(LocalDateTime.of(2026, 10, 11, 15, 0), "50.00"),
+                localSale(LocalDateTime.of(2026, 10, 12, 15, 0), "30.00"));
+
+        AdminStatsOutput.OrderStats orders = service("2026-10-26T21:00:00Z").getStats().orders();
+
+        assertThat(orders.paidThisMonth()).isEqualTo(3);
+        assertThat(orders.revenueThisMonth()).isEqualByComparingTo("180.00");
+        assertThat(orders.site().paidThisMonth()).isEqualTo(2);
+        assertThat(orders.site().revenueThisMonth()).isEqualByComparingTo("150.00");
+        assertThat(orders.site().averageTicketThisMonth()).isEqualByComparingTo("75.00");
+        assertThat(orders.local().paidThisMonth()).isEqualTo(1);
+        assertThat(orders.local().revenueThisMonth()).isEqualByComparingTo("30.00");
+        assertThat(orders.local().averageTicketThisMonth()).isEqualByComparingTo("30.00");
+    }
+
+    @Test
+    void getStats_serieDiariaSeparaCanaisNoMesmoDia() {
+        paidOrdersReturn(
+                paidOrder(LocalDateTime.of(2026, 10, 20, 15, 0), "40.00"),
+                localSale(LocalDateTime.of(2026, 10, 20, 16, 0), "25.00"),
+                localSale(LocalDateTime.of(2026, 10, 20, 17, 0), "15.00"));
+
+        AdminStatsOutput stats = service("2026-10-26T21:00:00Z").getStats();
+
+        assertThat(stats.dailySales())
+                .filteredOn(d -> d.date().equals(LocalDate.of(2026, 10, 20)))
+                .singleElement()
+                .satisfies(d -> {
+                    assertThat(d.orders()).isEqualTo(3);
+                    assertThat(d.revenue()).isEqualByComparingTo("80.00");
+                    assertThat(d.site().orders()).isEqualTo(1);
+                    assertThat(d.site().revenue()).isEqualByComparingTo("40.00");
+                    assertThat(d.local().orders()).isEqualTo(2);
+                    assertThat(d.local().revenue()).isEqualByComparingTo("40.00");
+                });
+    }
+
+    @Test
+    void getStats_semVendaLocal_recorteLocalZerado() {
+        paidOrdersReturn(paidOrder(LocalDateTime.of(2026, 10, 10, 15, 0), "100.00"));
+
+        AdminStatsOutput.OrderStats orders = service("2026-10-26T21:00:00Z").getStats().orders();
+
+        assertThat(orders.local().paidThisMonth()).isZero();
+        assertThat(orders.local().revenueThisMonth()).isEqualByComparingTo("0");
+        assertThat(orders.local().averageTicketThisMonth()).isEqualByComparingTo("0");
+    }
+
     private Order paidOrder(LocalDateTime paidAtUtc, String total) {
         Order order = new Order();
         order.setStatus(OrderStatus.PAID);

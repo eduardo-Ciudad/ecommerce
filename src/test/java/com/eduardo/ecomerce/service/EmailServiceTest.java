@@ -55,7 +55,8 @@ class EmailServiceTest {
                 "Centro", "Rio Preto", "SP",
                 List.of(item), LocalDateTime.now(),
                 null, BigDecimal.ZERO,
-                false, null, null
+                false, null, null,
+                com.eduardo.ecomerce.domain.order.OrderChannel.SITE, null, null
         );
     }
 
@@ -93,7 +94,8 @@ class EmailServiceTest {
                 "Centro", "Rio Preto", "SP",
                 List.of(coloredItem), LocalDateTime.now(),
                 null, BigDecimal.ZERO,
-                false, null, null
+                false, null, null,
+                com.eduardo.ecomerce.domain.order.OrderChannel.SITE, null, null
         );
         ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
 
@@ -117,7 +119,8 @@ class EmailServiceTest {
                 "Centro", "Rio Preto", "SP",
                 List.of(codedItem), LocalDateTime.now(),
                 null, BigDecimal.ZERO,
-                false, null, null
+                false, null, null,
+                com.eduardo.ecomerce.domain.order.OrderChannel.SITE, null, null
         );
         ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
 

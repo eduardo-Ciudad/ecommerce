@@ -89,7 +89,9 @@ class BlingOrderSyncServiceTest {
         BlingOrderProperties properties = new BlingOrderProperties(
                 enabled, STORE_ID, 15L,
                 new BlingOrderProperties.PaymentMethods(9042991L, 11412042L),
-                5, Duration.ofMinutes(15));
+                5, Duration.ofMinutes(15),
+                new BlingOrderProperties.Local(777L, 9L, new BlingOrderProperties.LocalPaymentMethods(
+                        1001L, 1002L, 1003L, 1004L, 1005L)));
         return new BlingOrderSyncService(orderRepository, blingClient, blingService, mapper, properties, clock);
     }
 
@@ -179,6 +181,23 @@ class BlingOrderSyncServiceTest {
         assertThat(service.sync(orderId)).isEqualTo(BlingSyncOutcome.SENT);
         verify(blingClient).createContact(TOKEN, contactPayload);
         verify(mapper).toSaleOrder(order, CONTACT_ID);
+    }
+
+    @Test
+    void sync_vendaLocal_usaContatoGenericoSemBuscarNemCriarContato() {
+        order.setChannel(com.eduardo.ecomerce.domain.order.OrderChannel.LOCAL);
+        order.setCustomerDocument(null);
+        noExistingSaleOrder();
+        when(mapper.toSaleOrder(order, 777L)).thenReturn(salePayload);
+        saleOrderCreated();
+
+        assertThat(service.sync(orderId)).isEqualTo(BlingSyncOutcome.SENT);
+
+        verify(mapper).toSaleOrder(order, 777L);
+        verify(blingClient, never()).findContactsByDocument(anyString(), anyString());
+        verify(blingClient, never()).createContact(anyString(), any());
+        verify(mapper, never()).toContact(any());
+        verify(blingClient).launchSaleOrderStock(eq(TOKEN), anyLong());
     }
 
     @Test

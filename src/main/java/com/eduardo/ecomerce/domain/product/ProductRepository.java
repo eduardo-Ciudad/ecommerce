@@ -42,7 +42,13 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
           SELECT 1 FROM ProductVariant pv
           WHERE pv.product = p AND pv.size IN :sizeValues
       ))
-      AND (:nameQueryPattern IS NULL OR LOWER(p.name) LIKE :nameQueryPattern)
+      AND (:nameQueryPattern IS NULL
+           OR LOWER(p.name) LIKE :nameQueryPattern
+           OR EXISTS (
+               SELECT 1 FROM ProductVariant pv2
+               WHERE pv2.product = p
+                 AND (LOWER(pv2.sku) = :codeQuery OR pv2.gtin = :codeQuery)
+           ))
     """)
     Page<Product> search(
             @Param("categoryIds") Collection<UUID> categoryIds,
@@ -50,6 +56,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             @Param("brandValues") Collection<String> brandValues,
             @Param("sizeValues") Collection<String> sizeValues,
             @Param("nameQueryPattern") String nameQueryPattern,
+            @Param("codeQuery") String codeQuery,
             Pageable pageable
     );
 

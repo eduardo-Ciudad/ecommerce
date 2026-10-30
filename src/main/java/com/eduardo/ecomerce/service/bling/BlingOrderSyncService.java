@@ -122,6 +122,10 @@ public class BlingOrderSyncService {
     }
 
     private Long resolveContact(Order order) {
+        if (order.isLocalSale()) {
+            // venda de balcão: contato genérico único, o nome do cliente fica só no site e nas observações
+            return properties.localContactId();
+        }
         String document = order.getCustomerDocument();
         if (document != null && !document.isBlank()) {
             JsonNode found = blingService.callBling(token -> blingClient.findContactsByDocument(token, document));

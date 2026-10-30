@@ -134,4 +134,34 @@ class OrderTest {
         assertThat(order.getBlingSyncError()).isNull();
         assertThat(order.getPaidAt()).isNull();
     }
+
+    // ---------- completeLocalSale ----------
+
+    @Test
+    void completeLocalSale_pedidoLocalPending_ficaDeliveredComPaidAtEFilaDoBling() {
+        Order order = pendingOrder(null, null);
+        order.setChannel(OrderChannel.LOCAL);
+        LocalDateTime paidAt = LocalDateTime.of(2026, 10, 30, 21, 30);
+
+        order.completeLocalSale(paidAt);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.DELIVERED);
+        assertThat(order.getPaidAt()).isEqualTo(paidAt);
+        assertThat(order.getBlingSyncStatus()).isEqualTo(BlingSyncStatus.PENDING);
+    }
+
+    @Test
+    void completeLocalSale_pedidoDoSite_lancaExcecaoSemMudarStatus() {
+        Order order = pendingOrder(null, null);
+
+        assertThatThrownBy(() -> order.completeLocalSale(LocalDateTime.now()))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+    }
+
+    @Test
+    void novoPedido_canalPadraoSite() {
+        assertThat(new Order().getChannel()).isEqualTo(OrderChannel.SITE);
+        assertThat(new Order().isLocalSale()).isFalse();
+    }
 }

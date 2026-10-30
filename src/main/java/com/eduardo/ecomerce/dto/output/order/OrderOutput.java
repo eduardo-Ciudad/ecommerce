@@ -1,5 +1,6 @@
 package com.eduardo.ecomerce.dto.output.order;
 
+import com.eduardo.ecomerce.domain.order.OrderChannel;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.dto.output.orderitem.OrderItemOutput;
 
@@ -33,5 +34,8 @@ public record OrderOutput(
         BigDecimal discountAmount,
         boolean canPay,
         OffsetDateTime paymentDeadline,
-        BlingSyncInfo bling // null fora das rotas de admin
+        BlingSyncInfo bling, // null fora das rotas de admin
+        OrderChannel channel,
+        String customerName,
+        String paymentMethod
 ) { }

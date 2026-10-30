@@ -112,6 +112,14 @@ public class Order {
     @Column(name = "bling_synced_at")
     private LocalDateTime blingSyncedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private OrderChannel channel = OrderChannel.SITE;
+
+    /** Só venda local: texto livre para a loja saber para quem vendeu (pode ficar vazio). */
+    @Column(name = "customer_name", length = 100)
+    private String customerName;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
     private List<OrderItem> items = new ArrayList<>();
 
@@ -160,6 +168,22 @@ public class Order {
         this.status = OrderStatus.PAID;
         this.paidAt = paidAt;
         this.blingSyncStatus = BlingSyncStatus.PENDING;
+    }
+
+    /**
+     * Venda de balcão: a mercadoria sai na hora, então o pedido passa por PAID (fila do Bling)
+     * e já fica DELIVERED. Só vale para pedido LOCAL.
+     */
+    public void completeLocalSale(LocalDateTime paidAt) {
+        if (channel != OrderChannel.LOCAL) {
+            throw new IllegalStateException("Só pedido LOCAL pode ser concluído como venda de balcão");
+        }
+        markAsPaid(paidAt);
+        this.status = OrderStatus.DELIVERED;
+    }
+
+    public boolean isLocalSale() {
+        return channel == OrderChannel.LOCAL;
     }
 
     public LocalDateTime getPaymentDeadline() {

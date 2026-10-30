@@ -134,6 +134,26 @@ class SecurityConfigAuthorizationTest {
         org.mockito.Mockito.verify(blingOrderSyncService).resend(orderId);
     }
 
+    @Test
+    @DisplayName("POST /orders/admin/local-sales sem autenticação retorna 401")
+    void localSaleRejectsAnonymous() throws Exception {
+        mockMvc.perform(post("/orders/admin/local-sales")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("POST /orders/admin/local-sales bloqueia cliente sem papel ADMIN")
+    void localSaleRejectsNonAdminUser() throws Exception {
+        mockMvc.perform(post("/orders/admin/local-sales")
+                        .with(user("cliente").roles("CLIENT"))
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden());
+        org.mockito.Mockito.verifyNoInteractions(orderService);
+    }
+
     private static OrderOutput orderOutput(UUID orderId, UUID userId) {
         return new OrderOutput(
                 orderId, userId, java.math.BigDecimal.TEN,
@@ -142,7 +162,8 @@ class SecurityConfigAuthorizationTest {
                 null, null, null, null, null, null, null, null,
                 List.of(), java.time.LocalDateTime.now(),
                 null, java.math.BigDecimal.ZERO,
-                false, null, null
+                false, null, null,
+                com.eduardo.ecomerce.domain.order.OrderChannel.SITE, null, null
         );
     }
 

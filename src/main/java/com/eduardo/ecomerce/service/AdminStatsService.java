@@ -7,6 +7,8 @@ import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.dto.output.admin.AdminStatsOutput;
+import com.eduardo.ecomerce.dto.output.admin.AdminStatsOutput.ChannelDay;
+import com.eduardo.ecomerce.dto.output.admin.AdminStatsOutput.ChannelStats;
 import com.eduardo.ecomerce.dto.output.admin.AdminStatsOutput.DailySales;
 import com.eduardo.ecomerce.dto.output.admin.AdminStatsOutput.OrderStats;
 import com.eduardo.ecomerce.dto.output.admin.AdminStatsOutput.ProductStats;
@@ -66,44 +68,71 @@ public class AdminStatsService {
     }
 
     private OrderStats orderStats(List<Order> paidOrders, LocalDate monthStart) {
-        long paidThisMonth = 0;
-        BigDecimal revenue = BigDecimal.ZERO;
+        Totals all = new Totals();
+        Totals site = new Totals();
+        Totals local = new Totals();
         for (Order order : paidOrders) {
             if (!toStoreDate(order.getPaidAt()).isBefore(monthStart)) {
-                paidThisMonth++;
-                revenue = revenue.add(order.getTotal());
+                all.add(order);
+                (order.isLocalSale() ? local : site).add(order);
             }
         }
-        BigDecimal averageTicket = paidThisMonth == 0
-                ? BigDecimal.ZERO.setScale(2)
-                : revenue.divide(BigDecimal.valueOf(paidThisMonth), 2, RoundingMode.HALF_UP);
 
         return new OrderStats(
                 orderRepository.countByStatus(OrderStatus.PENDING),
                 orderRepository.countByBlingSyncStatus(BlingSyncStatus.FAILED),
-                paidThisMonth,
-                revenue.setScale(2, RoundingMode.HALF_UP),
-                averageTicket);
+                all.count,
+                all.revenue(),
+                all.averageTicket(),
+                site.toChannelStats(),
+                local.toChannelStats());
     }
 
     private List<DailySales> dailySales(List<Order> paidOrders, LocalDate seriesStart, LocalDate today) {
-        Map<LocalDate, long[]> counts = new LinkedHashMap<>();
-        Map<LocalDate, BigDecimal> revenues = new LinkedHashMap<>();
+        Map<LocalDate, Totals[]> days = new LinkedHashMap<>();
         for (LocalDate day = seriesStart; !day.isAfter(today); day = day.plusDays(1)) {
-            counts.put(day, new long[1]);
-            revenues.put(day, BigDecimal.ZERO);
+            days.put(day, new Totals[]{new Totals(), new Totals(), new Totals()});
         }
         for (Order order : paidOrders) {
-            LocalDate day = toStoreDate(order.getPaidAt());
-            if (counts.containsKey(day)) {
-                counts.get(day)[0]++;
-                revenues.merge(day, order.getTotal(), BigDecimal::add);
+            Totals[] totals = days.get(toStoreDate(order.getPaidAt()));
+            if (totals != null) {
+                totals[0].add(order);
+                totals[order.isLocalSale() ? 2 : 1].add(order);
             }
         }
-        List<DailySales> series = new ArrayList<>(counts.size());
-        counts.forEach((day, count) -> series.add(
-                new DailySales(day, count[0], revenues.get(day).setScale(2, RoundingMode.HALF_UP))));
+        List<DailySales> series = new ArrayList<>(days.size());
+        days.forEach((day, totals) -> series.add(new DailySales(
+                day, totals[0].count, totals[0].revenue(), totals[1].toChannelDay(), totals[2].toChannelDay())));
         return series;
+    }
+
+    /** Acumulador de quantidade e faturamento de um recorte (mês ou dia, por canal). */
+    private static final class Totals {
+        private long count;
+        private BigDecimal sum = BigDecimal.ZERO;
+
+        void add(Order order) {
+            count++;
+            sum = sum.add(order.getTotal());
+        }
+
+        BigDecimal revenue() {
+            return sum.setScale(2, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal averageTicket() {
+            return count == 0
+                    ? BigDecimal.ZERO.setScale(2)
+                    : sum.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
+        }
+
+        ChannelStats toChannelStats() {
+            return new ChannelStats(count, revenue(), averageTicket());
+        }
+
+        ChannelDay toChannelDay() {
+            return new ChannelDay(count, revenue());
+        }
     }
 
     /** paidAt é gravado com LocalDateTime.now(clock), ou seja, na zona do clock (UTC no container). */

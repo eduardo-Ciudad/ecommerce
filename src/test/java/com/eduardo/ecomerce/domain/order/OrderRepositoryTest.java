@@ -265,6 +265,50 @@ class OrderRepositoryTest {
         assertThat(orderRepository.resetBlingSyncForResend(order.getId())).isZero();
     }
 
+    // ----- venda local (DELIVERED + LOCAL) -----
+
+    @Test
+    void claimForBlingSync_vendaLocalEntregue_pega() {
+        Order order = persistBlingOrder(OrderStatus.DELIVERED, BlingSyncStatus.PENDING, OrderChannel.LOCAL);
+
+        assertThat(orderRepository.claimForBlingSync(order.getId(), NOW, STALE_BEFORE)).isEqualTo(1);
+    }
+
+    @Test
+    void claimForBlingSync_pedidoDoSiteEntregue_naoPega() {
+        Order order = persistBlingOrder(OrderStatus.DELIVERED, BlingSyncStatus.PENDING, OrderChannel.SITE);
+
+        assertThat(orderRepository.claimForBlingSync(order.getId(), NOW, STALE_BEFORE)).isZero();
+    }
+
+    @Test
+    void findIdsForBlingRetry_incluiVendaLocalEntregueEIgnoraSiteEntregue() {
+        Order local = persistBlingOrder(OrderStatus.DELIVERED, BlingSyncStatus.FAILED, OrderChannel.LOCAL);
+        Order siteDelivered = persistBlingOrder(OrderStatus.DELIVERED, BlingSyncStatus.FAILED, OrderChannel.SITE);
+        entityManager.clear();
+
+        List<UUID> result = orderRepository.findIdsForBlingRetry(MAX_ATTEMPTS, STALE_BEFORE);
+
+        assertThat(result).contains(local.getId()).doesNotContain(siteDelivered.getId());
+    }
+
+    @Test
+    void resetBlingSyncForResend_vendaLocalFalhou_permite() {
+        Order order = persistBlingOrder(OrderStatus.DELIVERED, BlingSyncStatus.FAILED, OrderChannel.LOCAL);
+
+        assertThat(orderRepository.resetBlingSyncForResend(order.getId())).isEqualTo(1);
+    }
+
+    @Test
+    void channelECustomerName_persistidos() {
+        Order order = persistBlingOrder(OrderStatus.DELIVERED, BlingSyncStatus.PENDING, OrderChannel.LOCAL);
+        jdbcTemplate.update("UPDATE orders SET customer_name = ? WHERE id = ?", "Cris vizinha", order.getId());
+
+        Order reloaded = reload(order);
+        assertThat(reloaded.getChannel()).isEqualTo(OrderChannel.LOCAL);
+        assertThat(reloaded.getCustomerName()).isEqualTo("Cris vizinha");
+    }
+
     // ----- findWithItemsById -----
 
     @Test
@@ -332,7 +376,12 @@ class OrderRepositoryTest {
     }
 
     private Order persistBlingOrder(OrderStatus status, BlingSyncStatus blingStatus) {
+        return persistBlingOrder(status, blingStatus, OrderChannel.SITE);
+    }
+
+    private Order persistBlingOrder(OrderStatus status, BlingSyncStatus blingStatus, OrderChannel channel) {
         Order order = new Order();
+        order.setChannel(channel);
         order.setUser(persistUser());
         order.setTotal(new BigDecimal("100.00"));
         order.setStatus(status);

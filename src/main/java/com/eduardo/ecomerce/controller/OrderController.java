@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.domain.order.OrderStatus;
+import com.eduardo.ecomerce.dto.input.order.CreateLocalSaleInput;
 import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
 import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.order.OrderOutput;
@@ -81,6 +82,21 @@ public class OrderController {
     public ResponseEntity<PageResponse<OrderOutput>> findAllAdmin (
             @PageableDefault(size = 20) Pageable pageable) {
         return ResponseEntity.ok(orderService.findAll(pageable));
+    }
+
+    @PostMapping("/admin/local-sales")
+    @Operation(summary = "Registrar venda local", description = "Registra uma venda feita no balcão da loja: baixa o estoque, "
+            + "conclui o pedido como entregue e envia ao Bling. Requer perfil ADMIN.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Venda registrada"),
+            @ApiResponse(responseCode = "400", description = "Dados inválidos"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão"),
+            @ApiResponse(responseCode = "404", description = "Variante não encontrada"),
+            @ApiResponse(responseCode = "422", description = "Estoque insuficiente ou desconto inválido")
+    })
+    public ResponseEntity<OrderOutput> createLocalSale(@RequestBody @Valid CreateLocalSaleInput input) {
+        UUID adminId = SecurityUtils.getAuthenticatedUserId();
+        return ResponseEntity.status(HttpStatus.CREATED).body(orderService.createLocalSale(adminId, input));
     }
 
     @PostMapping("/admin/{id}/bling/resend")

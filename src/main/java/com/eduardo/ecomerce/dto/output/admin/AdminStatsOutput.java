@@ -10,8 +10,16 @@ public record AdminStatsOutput(ProductStats products, OrderStats orders, List<Da
     public record ProductStats(long active, long inactive, long activeWithoutImage,
                                long variants, long variantsOutOfStock, long variantsWithoutGtin) {}
 
+    /** Totais do mês somando os dois canais, mais o recorte site/loja física. */
     public record OrderStats(long pending, long blingFailed, long paidThisMonth,
-                             BigDecimal revenueThisMonth, BigDecimal averageTicketThisMonth) {}
+                             BigDecimal revenueThisMonth, BigDecimal averageTicketThisMonth,
+                             ChannelStats site, ChannelStats local) {}
 
-    public record DailySales(LocalDate date, long orders, BigDecimal revenue) {}
+    public record ChannelStats(long paidThisMonth, BigDecimal revenueThisMonth, BigDecimal averageTicketThisMonth) {}
+
+    /** orders/revenue somam os dois canais; site e local trazem o recorte do dia. */
+    public record DailySales(LocalDate date, long orders, BigDecimal revenue,
+                             ChannelDay site, ChannelDay local) {}
+
+    public record ChannelDay(long orders, BigDecimal revenue) {}
 }

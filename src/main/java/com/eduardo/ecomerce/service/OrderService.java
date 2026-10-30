@@ -8,6 +8,8 @@ import com.eduardo.ecomerce.domain.cartitem.CartItem;
 import com.eduardo.ecomerce.domain.cartitem.CartItemRepository;
 import com.eduardo.ecomerce.domain.coupon.Coupon;
 import com.eduardo.ecomerce.domain.order.Order;
+import com.eduardo.ecomerce.domain.order.OrderChannel;
+import com.eduardo.ecomerce.domain.order.OrderPaidEvent;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
@@ -15,6 +17,7 @@ import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.domain.user.User;
 import com.eduardo.ecomerce.domain.user.UserRepository;
+import com.eduardo.ecomerce.dto.input.order.CreateLocalSaleInput;
 import com.eduardo.ecomerce.dto.input.order.CreateOrderInput;
 import com.eduardo.ecomerce.dto.output.common.PageResponse;
 import com.eduardo.ecomerce.dto.output.order.BlingSyncInfo;
@@ -26,6 +29,7 @@ import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -33,10 +37,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 @Slf4j
@@ -54,6 +61,8 @@ public class OrderService {
     private final TransactionTemplate transactionTemplate;
     private final EmailService emailService;
     private final CouponService couponService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     public record ExpiringOrderSnapshot(UUID orderId, String paymentId, BigDecimal total) {}
 
@@ -113,17 +122,7 @@ public class OrderService {
         for (CartItem cartItem : cartItems) {
             ProductVariant variant = cartItem.getVariant();
 
-            OrderItem orderItem = new OrderItem();
-            orderItem.setOrder(order);
-            orderItem.setVariant(variant);
-            orderItem.setQuantity(cartItem.getQuantity());
-            orderItem.setUnitPrice(variant.getPrice());
-            orderItem.setProductName(variant.getProduct().getName());
-            orderItem.setSize(variant.getSize());
-            orderItem.setColor(variant.getColor());
-            orderItem.setSku(variant.getSku());
-            orderItem.setGtin(variant.getGtin());
-            order.getItems().add(orderItem);
+            order.getItems().add(buildItem(order, variant, cartItem.getQuantity()));
 
             subtotal = subtotal.add(variant.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity())));
 
@@ -150,6 +149,77 @@ public class OrderService {
         OrderOutput output = toOutput(order);
         emailService.sendNewOrderNotification(output, user.getEmail());
         return output;
+    }
+
+    /**
+     * Venda de balcão registrada pelo admin. Baixa o estoque na hora, já sai DELIVERED e entra na
+     * fila do Bling pelo mesmo OrderPaidEvent do site (listener AFTER_COMMIT).
+     */
+    @Transactional
+    public OrderOutput createLocalSale(UUID adminId, CreateLocalSaleInput input) {
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado"));
+
+        Map<UUID, Integer> quantities = new LinkedHashMap<>();
+        for (CreateLocalSaleInput.Item item : input.items()) {
+            quantities.merge(item.variantId(), item.quantity(), Integer::sum);
+        }
+
+        Order order = new Order();
+        order.setUser(admin);
+        order.setChannel(OrderChannel.LOCAL);
+        order.setStatus(OrderStatus.PENDING);
+        order.setPaymentMethod(input.paymentMethod().code());
+        order.setCustomerName(blankToNull(input.customerName()));
+
+        BigDecimal subtotal = BigDecimal.ZERO;
+        for (Map.Entry<UUID, Integer> entry : quantities.entrySet()) {
+            ProductVariant variant = productVariantRepository.findById(entry.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Variante não encontrada: " + entry.getKey()));
+            int quantity = entry.getValue();
+            if (variant.getStock() < quantity) {
+                throw new BusinessException("Estoque insuficiente para a variante: " + variant.getId());
+            }
+
+            order.getItems().add(buildItem(order, variant, quantity));
+            subtotal = subtotal.add(variant.getPrice().multiply(BigDecimal.valueOf(quantity)));
+
+            variant.setStock(variant.getStock() - quantity);
+            productVariantRepository.save(variant);
+        }
+
+        BigDecimal discount = input.discountAmount() != null ? input.discountAmount() : BigDecimal.ZERO;
+        if (discount.compareTo(subtotal) >= 0) {
+            throw new BusinessException("Desconto deve ser menor que o total dos itens");
+        }
+        order.setDiscountAmount(discount);
+        order.setTotal(subtotal.subtract(discount));
+
+        order.completeLocalSale(LocalDateTime.now(clock));
+        orderRepository.save(order);
+        eventPublisher.publishEvent(new OrderPaidEvent(order.getId()));
+
+        log.info("Venda local registrada — admin: {}, orderId: {}, pagamento: {}, total: {}",
+                adminId, order.getId(), order.getPaymentMethod(), order.getTotal());
+        return toOutput(order);
+    }
+
+    private static OrderItem buildItem(Order order, ProductVariant variant, int quantity) {
+        OrderItem orderItem = new OrderItem();
+        orderItem.setOrder(order);
+        orderItem.setVariant(variant);
+        orderItem.setQuantity(quantity);
+        orderItem.setUnitPrice(variant.getPrice());
+        orderItem.setProductName(variant.getProduct().getName());
+        orderItem.setSize(variant.getSize());
+        orderItem.setColor(variant.getColor());
+        orderItem.setSku(variant.getSku());
+        orderItem.setGtin(variant.getGtin());
+        return orderItem;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     public PageResponse<OrderOutput> findByUserId(UUID userId, Pageable pageable) {
@@ -338,7 +408,10 @@ public class OrderService {
                 order.getDiscountAmount(),
                 order.canReceivePayment(),
                 toOffset(order.getPaymentDeadline()),
-                bling
+                bling,
+                order.getChannel(),
+                order.getCustomerName(),
+                order.getPaymentMethod()
         );
     }
 

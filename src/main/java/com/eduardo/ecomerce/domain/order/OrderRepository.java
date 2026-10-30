@@ -62,7 +62,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
                SET o.blingSyncStatus = com.eduardo.ecomerce.domain.order.BlingSyncStatus.PROCESSING,
                    o.blingSyncStartedAt = :now
              WHERE o.id = :id
-               AND o.status = com.eduardo.ecomerce.domain.order.OrderStatus.PAID
+               AND (o.status = com.eduardo.ecomerce.domain.order.OrderStatus.PAID
+                    OR (o.status = com.eduardo.ecomerce.domain.order.OrderStatus.DELIVERED
+                        AND o.channel = com.eduardo.ecomerce.domain.order.OrderChannel.LOCAL))
                AND (o.blingSyncStatus IN (com.eduardo.ecomerce.domain.order.BlingSyncStatus.PENDING,
                                           com.eduardo.ecomerce.domain.order.BlingSyncStatus.FAILED)
                     OR (o.blingSyncStatus = com.eduardo.ecomerce.domain.order.BlingSyncStatus.PROCESSING
@@ -112,7 +114,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
                    o.blingSyncAttempts = 0,
                    o.blingSyncError = NULL
              WHERE o.id = :id
-               AND o.status = com.eduardo.ecomerce.domain.order.OrderStatus.PAID
+               AND (o.status = com.eduardo.ecomerce.domain.order.OrderStatus.PAID
+                    OR (o.status = com.eduardo.ecomerce.domain.order.OrderStatus.DELIVERED
+                        AND o.channel = com.eduardo.ecomerce.domain.order.OrderChannel.LOCAL))
                AND (o.blingSyncStatus IS NULL
                     OR o.blingSyncStatus IN (com.eduardo.ecomerce.domain.order.BlingSyncStatus.PENDING,
                                              com.eduardo.ecomerce.domain.order.BlingSyncStatus.FAILED))
@@ -122,7 +126,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     /** Fila do scheduler: pendentes/falhas abaixo do limite de tentativas e PROCESSING travado. */
     @Query("""
             SELECT o.id FROM Order o
-             WHERE o.status = com.eduardo.ecomerce.domain.order.OrderStatus.PAID
+             WHERE (o.status = com.eduardo.ecomerce.domain.order.OrderStatus.PAID
+                    OR (o.status = com.eduardo.ecomerce.domain.order.OrderStatus.DELIVERED
+                        AND o.channel = com.eduardo.ecomerce.domain.order.OrderChannel.LOCAL))
                AND ((o.blingSyncStatus IN (com.eduardo.ecomerce.domain.order.BlingSyncStatus.PENDING,
                                            com.eduardo.ecomerce.domain.order.BlingSyncStatus.FAILED)
                      AND o.blingSyncAttempts < :maxAttempts)

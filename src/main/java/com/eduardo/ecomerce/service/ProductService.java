@@ -57,11 +57,12 @@ public class ProductService {
         Set<UUID> categoryIds = categoryId == null ? null : resolveCategoryIdWithChildren(categoryId);
         List<String> brandValues = brand == null ? null : brand.getSpecificationValues();
         List<String> sizeValues = sizeRange == null ? null : sizeRange.getAcceptedSizes();
-        String nameQueryPattern = (nameQuery == null || nameQuery.isBlank())
-                ? null
-                : "%" + nameQuery.trim().toLowerCase() + "%";
+        // q busca pelo nome (contém) ou pelo SKU/GTIN exato de alguma variante (leitor de código de barras)
+        String codeQuery = (nameQuery == null || nameQuery.isBlank()) ? null : nameQuery.trim().toLowerCase();
+        String nameQueryPattern = codeQuery == null ? null : "%" + codeQuery + "%";
 
-        Page<Product> page = productRepository.search(categoryIds, includeWithoutImage, brandValues, sizeValues, nameQueryPattern, pageable);
+        Page<Product> page = productRepository.search(
+                categoryIds, includeWithoutImage, brandValues, sizeValues, nameQueryPattern, codeQuery, pageable);
         return PageResponse.from(page.map(this::toOutput));
     }
 

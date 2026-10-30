@@ -48,7 +48,8 @@ class OrderServiceExpirationTest {
     void setUp() {
         service = spy(new OrderService(orderRepository, cartRepository, cartItemRepository, userRepository,
                 productVariantRepository, addressRepository, shippingService, transactionTemplate, emailService,
-                couponService));
+                couponService, mock(org.springframework.context.ApplicationEventPublisher.class),
+                java.time.Clock.systemUTC()));
         lenient().doAnswer(inv -> ((TransactionCallback<?>) inv.getArgument(0))
                 .doInTransaction(transactionStatus)).when(transactionTemplate).execute(any());
     }
