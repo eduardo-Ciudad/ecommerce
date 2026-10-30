@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest(properties = {
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.flyway.enabled=false",
+        // product_specifications tem a coluna "value", palavra reservada no H2: sem aspas a tabela não é criada
+        "spring.jpa.properties.hibernate.auto_quote_keyword=true",
         "app.encryption-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 })
 class ProductRepositorySearchTest {
