@@ -1,123 +1,120 @@
-# 🛍️ GabiKids — E-commerce API
+# GabiKids · API de e-commerce
 
 ![Java](https://img.shields.io/badge/Java-17-orange?style=flat-square&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-green?style=flat-square&logo=springboot)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-blue?style=flat-square&logo=postgresql)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=flat-square&logo=postgresql)
 ![CI](https://github.com/eduardo-Ciudad/ecommerce/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-API REST de e-commerce em produção para uma loja de roupas infantil. Cobre o fluxo completo de compra: catálogo com variações de tamanho, carrinho persistente, cálculo de frete via API dos Correios, checkout com Mercado Pago (Pix e cartão), controle de estoque, autenticação JWT com verificação de email e RBAC — além de sincronização de catálogo com o ERP Bling.
+API REST da loja de roupas infantis GabiKids, em produção em [gabikidstore.com](https://gabikidstore.com). Cobre a loja virtual de ponta a ponta (catálogo, carrinho, frete, cupons e pagamento), a integração com o ERP Bling e as vendas feitas no balcão da loja física.
 
----
+Projeto desenvolvido por mim pela [CiudadLab](https://ciudadlab.com.br). O frontend está em [ecommerce-vanilla-frontend](https://github.com/eduardo-Ciudad/ecommerce-vanilla-frontend).
 
-## 🚀 Tecnologias
+## O problema
 
-- **Java 17** + **Spring Boot 3.5.14**
-- **Spring Data JPA** + **Hibernate**
-- **Spring Security** + **JWT** (JJWT 0.12.6) — access token + refresh token
-- **PostgreSQL** + **Flyway** (24 migrações)
-- **Bling ERP API v3** — OAuth2, sincronização de categorias e produtos, criptografia de tokens (AES-GCM)
-- **Mercado Pago SDK** — checkout transparente (Pix + cartão), webhooks com validação HMAC-SHA256
-- **Correios API** — cálculo de frete (PAC/SEDEX) com autenticação por token e retry automático
-- **AWS S3 SDK** (Cloudflare R2) — armazenamento de imagens de produtos e categorias
-- **Spring Mail** — verificação de email e recuperação de senha assíncronas
-- **Bucket4j** + **Caffeine** — rate limiting por IP
-- **Springdoc OpenAPI** — documentação Swagger
-- **Lombok** + **Bean Validation**
-- **JUnit 5** + **Mockito** — 100+ testes unitários
-- **GitHub Actions** — CI
-- **Docker** — containerização multi-stage
+Antes do site, a loja vendia só pelo Instagram e pelo WhatsApp. Cada cliente precisava perguntar foto, tamanho e cor, e a dona respondia tudo à mão. Vendas se perdiam na demora. O estoque já ficava no Bling, então o site precisava conversar com ele em vez de criar um segundo controle.
 
----
+## O que o sistema faz
 
-## 📦 Funcionalidades
+**Loja virtual**
+* Catálogo sincronizado com o Bling, com categorias em dois níveis, várias imagens por produto e variações com tamanho, cor, SKU e GTIN
+* Carrinho persistente, endereços e frete em tempo real pelos Correios (PAC e SEDEX)
+* Cupons de desconto aplicados sobre o valor dos produtos
+* Checkout com Mercado Pago (Pix e cartão parcelado), com nova tentativa de pagamento por até 30 minutos depois de uma recusa
 
-- Autenticação JWT (access + refresh token) com verificação de email obrigatória antes da primeira compra
-- Recuperação e alteração de senha por token com expiração (confirmação por email)
-- RBAC com roles ADMIN e CLIENT
-- Rate limiting por IP via Bucket4j + Caffeine
-- Catálogo de categorias e produtos com upload de imagem (Cloudflare R2)
-- Variações de produto por tamanho com preço e estoque individuais
-- **Integração com Bling ERP (v3)**: fluxo OAuth2 completo, sincronização de categorias e produtos (com detecção de variação via `idProdutoPai`), criptografia AES-GCM dos tokens armazenados, refresh automático e endpoint de inspeção para debug
-- Carrinho persistente por usuário, protegido contra IDOR
-- Endereços de entrega por usuário (CRUD com endereço padrão)
-- Cálculo de frete em tempo real via Correios (PAC/SEDEX), com cache de token e retry em caso de 401
-- Criação de pedidos com decremento de estoque, lock pessimista para evitar overselling em concorrência
-- Atualização de status de pedido (ADMIN)
-- Checkout com Mercado Pago: Pix (QR Code) e cartão, com parcelamento
-- Webhooks de pagamento com verificação de assinatura, checagem de valor e idempotência
-- Soft delete de produtos (campo `active`)
-- Tratamento global de exceções com respostas padronizadas
-- Documentação interativa via Swagger UI
-- Logging estruturado com `@Slf4j` em todos os services
+**Integração com o Bling**
+* OAuth2 completo, com tokens criptografados no banco
+* Sincronização de categorias, produtos e imagens (redimensionadas antes de ir para o storage)
+* Envio automático de cada pedido pago ao Bling, com baixa de estoque, nova tentativa automática e reenvio manual pelo admin
 
----
+**Loja física**
+* Venda no balcão registrada pelo admin, com dinheiro, Pix, maquininha, link de pagamento ou fiado
+* Site e loja física usam o mesmo estoque, e o dashboard separa o faturamento por canal
 
-## 🗂️ Estrutura do projeto
+**Administração e Google**
+* Dashboard com contadores, faturamento do mês e vendas dos últimos 30 dias
+* Gestão de pedidos, cupons e produtos, com busca exata por SKU e GTIN
+* Feed XML de produtos para o Google Merchant Center
+
+**Contas**
+* Cadastro com verificação de e-mail, login com access e refresh token, recuperação e troca de senha
+* Papéis ADMIN e CLIENT
+
+## Decisões técnicas
+
+**Pagamento não espera o Bling.** Quando um pagamento é aprovado, o pedido publica um `OrderPaidEvent`. O envio ao Bling roda num `@TransactionalEventListener(AFTER_COMMIT)` assíncrono: se a transação do pagamento falhar, o evento é descartado, e se o Bling estiver fora, o cliente não sente. Um scheduler tenta de novo a cada 10 minutos, até 5 vezes, e o `numeroLoja` do pedido garante que o mesmo pedido nunca entra duas vezes.
+
+**Estoque sem venda duplicada.** A variação de produto usa lock otimista (`@Version`), e as operações críticas do pedido usam `PESSIMISTIC_WRITE`. Um pedido pendente reserva o estoque por 30 minutos, e um scheduler libera os pedidos expirados a cada 5 minutos.
+
+**Status do pedido com regras.** As transições permitidas (`PENDING → PAID → SHIPPED → DELIVERED`, com cancelamento só antes do envio) ficam no próprio enum, e qualquer outra mudança é recusada.
+
+**Webhook de pagamento confiável.** O webhook do Mercado Pago valida a assinatura HMAC SHA256, confere o valor pago com o valor do pedido e é idempotente.
+
+**Segredos e abuso.** Os tokens OAuth do Bling são criptografados com AES GCM num `AttributeConverter` do JPA. O rate limit é por IP (Bucket4j e Caffeine), e o cabeçalho de IP só é aceito quando vem de um proxy confiável.
+
+## Arquitetura
+
+```
+Frontend (Vercel) ──HTTPS──► Nginx ──► API Spring Boot (Docker, VPS) ──► PostgreSQL
+                                              │
+                    Bling · Mercado Pago · Correios · Cloudflare R2 · SMTP
+```
+
+O código é organizado em camadas: controllers recebem a requisição, services concentram as regras de negócio, `domain` guarda as entidades e repositories, e `infra` isola cada integração externa.
 
 ```
 src/main/java/com/eduardo/ecomerce
-├── controller           # Endpoints REST
-├── domain               # Entidades JPA e Repositories
-│   ├── user
-│   ├── category
-│   ├── product
-│   ├── productvariant
-│   ├── cart
-│   ├── cartitem
-│   ├── order
-│   ├── orderitem
-│   ├── address
-│   ├── passwordtoken
-│   └── blingtoken
-├── dto
-│   ├── input             # Payloads de entrada
-│   └── output             # Payloads de saída (inclui bling, shipping)
-├── email                 # Envio de emails transacionais
+├── controller        # Endpoints REST
+├── domain            # Entidades JPA e repositories (pedido, produto, variação, cupom...)
+├── dto               # Entrada e saída da API
+├── email             # E-mails transacionais assíncronos
 ├── infra
-│   ├── bling               # Cliente da API Bling (OAuth2, sync)
-│   ├── config             # Mercado Pago, OpenAPI, Storage
-│   ├── exception           # GlobalExceptionHandler
-│   ├── http                 # AppRestClientFactory
-│   ├── payment             # Validação de assinatura de webhook
-│   ├── persistence          # EncryptedStringConverter (AES-GCM)
-│   ├── security             # SecurityConfig, JwtFilter, JwtService, RateLimitFilter
-│   └── shipping             # Cliente da API dos Correios
-└── service                 # Regras de negócio
+│   ├── bling         # Cliente da API v3 do Bling e controle de requisições
+│   ├── config        # Mercado Pago, storage, OpenAPI, relógio
+│   ├── exception     # Tratamento global de erros
+│   ├── payment       # Validação de assinatura do webhook
+│   ├── persistence   # Criptografia AES GCM
+│   ├── security      # JWT, Spring Security, rate limit
+│   ├── shipping      # Cliente dos Correios
+│   └── validation    # Validação de CPF e CNPJ
+└── service
+    ├── bling         # Envio de pedidos ao Bling (listener, retry, mapper)
+    └── feed          # Feed do Google Merchant
 ```
 
----
+## Stack
 
-## ⚙️ Como rodar
+* Java 17, Spring Boot 3.5, Spring Data JPA, Spring Security
+* PostgreSQL 16 e Flyway (36 migrations)
+* JWT com JJWT, Bucket4j e Caffeine
+* Mercado Pago SDK, API v3 do Bling, API dos Correios
+* AWS SDK S3 apontando para o Cloudflare R2, Thumbnailator para as imagens
+* Springdoc OpenAPI
+* JUnit 5, Mockito, MockWebServer
+* Docker e GitHub Actions
 
-### Com Docker (recomendado)
+## Como rodar
+
+### Com Docker
 
 ```bash
 git clone https://github.com/eduardo-Ciudad/ecommerce.git
 cd ecommerce
-```
-
-Crie um arquivo `.env` na raiz com as variáveis necessárias (banco, JWT, criptografia, Bling, Mercado Pago, storage, SMTP e Correios — veja `.env.example`):
-
-```bash
+cp .env.example .env   # preencha as variáveis
 docker compose up --build
 ```
 
-A aplicação sobe em `http://localhost:8081`. As migrações Flyway rodam automaticamente.
+A API sobe em `http://localhost:8081`, e as migrations rodam sozinhas.
 
 ### Sem Docker
 
-**Pré-requisitos:** Java 17, Maven, PostgreSQL rodando localmente.
+Pré-requisitos: Java 17 e PostgreSQL com um banco `ecommerce_db`.
 
 ```bash
-# Crie o banco
-psql -U postgres -c "CREATE DATABASE ecommerce_db;"
-
-# Exporte as variáveis de ambiente necessárias (veja .env.example)
-
-# Rode
+# exporte as variáveis do .env.example
 ./mvnw spring-boot:run
 ```
+
+Nesse caso a API sobe em `http://localhost:8080`.
 
 ### Testes
 
@@ -125,111 +122,45 @@ psql -U postgres -c "CREATE DATABASE ecommerce_db;"
 ./mvnw test
 ```
 
----
+### Variáveis de ambiente
 
-## 📡 Endpoints principais
+Todas estão no [`.env.example`](.env.example), agrupadas por integração.
 
-### Autenticação
+| Grupo | Variáveis |
+|---|---|
+| Banco | `DB_USERNAME`, `DB_PASSWORD` |
+| Segurança | `JWT_SECRET`, `APP_ENCRYPTION_KEY`, `TRUSTED_PROXIES`, `CORS_ORIGINS`, `FRONTEND_URL` |
+| Mercado Pago | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `MP_NOTIFICATION_URL` |
+| Storage (R2) | `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET`, `STORAGE_PUBLIC_URL` |
+| E-mail | `MAIL_USERNAME`, `MAIL_PASSWORD`, `ADMIN_NOTIFICATION_EMAIL` |
+| Correios | `CORREIOS_*` |
+| Bling | `BLING_*` (OAuth) e `BLING_ORDERS_*` (envio de pedidos e venda no balcão) |
 
-| Método | Rota | Descrição | Acesso |
-|--------|------|-----------|--------|
-| POST | `/auth/register` | Registrar usuário (envia email de verificação) | Público |
-| POST | `/auth/login` | Login (retorna access + refresh token) | Público |
-| POST | `/auth/refresh` | Renovar access token | Público |
-| GET | `/auth/verify-email` | Verificar email a partir do token | Público |
-| POST | `/auth/forgot-password` | Solicitar recuperação de senha | Público |
-| POST | `/auth/reset-password` | Redefinir senha via token | Público |
-| POST | `/auth/change-password` | Solicitar troca de senha (usuário logado) | Autenticado |
-| GET | `/auth/confirm-password-change` | Confirmar troca de senha via token | Público |
+O envio de pedidos ao Bling vem desligado por padrão (`BLING_ORDERS_ENABLED=false`), para o projeto rodar localmente sem uma conta Bling.
 
-### Categorias / Produtos
+## Endpoints principais
 
-| Método | Rota | Descrição | Acesso |
-|--------|------|-----------|--------|
-| POST | `/categories` | Criar categoria | ADMIN |
-| GET | `/categories` | Listar categorias | Público |
-| GET | `/categories/{id}` | Buscar categoria por id | Público |
-| POST | `/categories/{id}/image` | Upload de imagem da categoria | ADMIN |
-| DELETE | `/categories/{id}` | Remover categoria | ADMIN |
-| POST | `/products` | Criar produto | ADMIN |
-| GET | `/products` | Listar produtos ativos | Público |
-| GET | `/products/{id}` | Buscar produto por id | Público |
-| PUT | `/products/{id}` | Atualizar produto | ADMIN |
-| DELETE | `/products/{id}` | Remover produto (soft delete) | ADMIN |
-| POST | `/products/{id}/image` | Upload de imagem do produto | ADMIN |
-| POST | `/products/{productId}/variants` | Adicionar variação | ADMIN |
-| PUT | `/variants/{id}` | Atualizar variação | ADMIN |
-| DELETE | `/variants/{id}` | Remover variação | ADMIN |
+A documentação completa fica em `/swagger-ui.html` com a aplicação rodando.
 
-### Integração Bling
+| Área | Rotas |
+|---|---|
+| Autenticação | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password` · `GET /auth/verify-email` |
+| Catálogo | `GET /categories`, `GET /products`, `GET /products/{id}` · CRUD de produtos, variações e imagens (ADMIN) |
+| Carrinho e endereços | `/cart`, `/cart/items`, `/addresses` |
+| Frete | `GET /shipping/calculate` |
+| Cupons | `GET /coupons/validate` · CRUD em `/coupons` (ADMIN) |
+| Pedidos | `POST /orders`, `GET /orders`, `PUT /orders/{id}/cancel` |
+| Pagamento | `POST /payments/process`, `POST /payments/webhook` |
+| Admin | `GET /admin/stats`, `GET /orders/admin`, `POST /orders/admin/local-sales`, `POST /orders/admin/{id}/bling/resend` |
+| Bling | `GET /bling/authorize`, `GET /bling/callback`, `POST /bling/sync/categories`, `POST /bling/sync/products` |
+| Google | `GET /feeds/google.xml` |
 
-| Método | Rota | Descrição | Acesso |
-|--------|------|-----------|--------|
-| GET | `/bling/authorize` | Inicia o fluxo OAuth2 com o Bling | ADMIN |
-| GET | `/bling/callback` | Callback do OAuth2 do Bling | Público (Bling) |
-| POST | `/bling/sync/categories` | Sincroniza categorias a partir do Bling | ADMIN |
-| POST | `/bling/sync/products` | Sincroniza produtos e variações a partir do Bling | ADMIN |
-| GET | `/bling/debug/inspect` | Inspeciona dados brutos retornados pelo Bling | ADMIN |
+## Testes
 
-### Endereços / Frete
+São mais de 470 testes em 45 classes, cobrindo as regras de pedido, estoque, pagamento, cupons, venda no balcão, envio ao Bling, frete, autenticação e as regras de autorização de cada rota. As chamadas HTTP aos serviços externos são testadas com MockWebServer.
 
-| Método | Rota | Descrição | Acesso |
-|--------|------|-----------|--------|
-| POST | `/addresses` | Cadastrar endereço | Autenticado (próprio) |
-| GET | `/addresses` | Listar endereços | Autenticado (próprio) |
-| PUT | `/addresses/{id}` | Atualizar endereço | Autenticado (próprio) |
-| DELETE | `/addresses/{id}` | Remover endereço | Autenticado (próprio) |
-| GET | `/shipping/calculate` | Calcular frete (PAC + SEDEX) por CEP | Público |
+O CI no GitHub Actions roda `mvn verify` contra um PostgreSQL 16 a cada push e pull request na `main`.
 
-### Carrinho / Pedidos / Pagamento
+## Autor
 
-| Método | Rota | Descrição | Acesso |
-|--------|------|-----------|--------|
-| GET | `/cart` | Ver carrinho | Autenticado (próprio) |
-| POST | `/cart/items` | Adicionar item ao carrinho | Autenticado (próprio) |
-| PUT | `/cart/items/{id}` | Atualizar quantidade do item | Autenticado (próprio) |
-| DELETE | `/cart/items/{id}` | Remover item do carrinho | Autenticado (próprio) |
-| POST | `/orders` | Criar pedido a partir do carrinho | Autenticado (próprio) |
-| GET | `/orders` | Listar pedidos | Autenticado (próprio) |
-| GET | `/orders/{id}` | Detalhar pedido | Autenticado (próprio) |
-| PUT | `/orders/{id}/status` | Atualizar status do pedido | ADMIN |
-| POST | `/payments/process` | Processar pagamento (Pix/cartão) | Autenticado (próprio) |
-| POST | `/payments/webhook` | Webhook do Mercado Pago | Mercado Pago |
-
-> 📄 Documentação completa disponível em `/swagger-ui.html` com a aplicação rodando.
-
----
-
-## 🧪 Testes
-
-Suíte com 100+ testes unitários cobrindo todas as regras de negócio dos services principais:
-
-| Classe de teste | Cobertura |
-|----------------|-----------|
-| `AuthServiceTest` | Registro, login, refresh, verificação de email, recuperação/troca de senha |
-| `OrderServiceTest` | Criação de pedido, controle de estoque, cálculo de frete no total |
-| `PaymentServiceTest` | Checkout Pix/cartão, webhook com validação de valor e idempotência |
-| `ShippingServiceTest` / `CorreiosClientTest` | Cálculo PAC/SEDEX, normalização de CEP, falhas dos Correios |
-| `AddressServiceTest` | CRUD de endereços, lógica de endereço padrão |
-| `CartServiceTest` | Carrinho persistente, proteção contra IDOR |
-| `CategoryServiceTest` / `ProductServiceTest` / `ProductVariantServiceTest` | CRUD, validações e vínculos |
-| `StorageServiceTest` | Upload de imagens |
-| `BlingClientTest` | Chamadas à API do Bling, tratamento de erros |
-| `BlingTokenEncryptionPersistenceTest` / `EncryptedStringConverterTest` | Criptografia AES-GCM dos tokens do Bling |
-| `WebhookSignatureValidatorTest` | Validação HMAC de webhooks |
-| `SecurityConfigAuthorizationTest` | Regras de autorização por rota/role |
-| `RateLimitFilterTest` / `GlobalExceptionHandlerTest` | Infraestrutura |
-
----
-
-## 🔜 Próximos passos
-
-- [ ] Hierarquia de categorias (pai/filho) espelhando a reorganização feita no Bling
-- [ ] Melhorias em privacidade/cookies/termos
-- [ ] Deploy contínuo (VPS Hostinger)
-
----
-
-## 👨‍💻 Autor
-
-Desenvolvido por [Eduardo](https://github.com/eduardo-Ciudad)
+Eduardo · [CiudadLab](https://ciudadlab.com.br) · [LinkedIn](https://www.linkedin.com/in/eduardociudadf) · [GitHub](https://github.com/eduardo-Ciudad)
