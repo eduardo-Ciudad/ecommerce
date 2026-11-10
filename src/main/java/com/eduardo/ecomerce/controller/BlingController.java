@@ -1,8 +1,10 @@
 package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.dto.output.bling.AuthorizationUrlOutput;
+import com.eduardo.ecomerce.dto.output.bling.BlingSyncStatusOutput;
 import com.eduardo.ecomerce.dto.output.bling.SyncProductsResult;
 import com.eduardo.ecomerce.service.BlingService;
+import com.eduardo.ecomerce.service.bling.BlingFullSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -18,6 +20,7 @@ import java.net.URI;
 public class BlingController {
 
     private final BlingService blingService;
+    private final BlingFullSyncService blingFullSyncService;
 
     @GetMapping("/authorize")
     public ResponseEntity<AuthorizationUrlOutput> authorize() {
@@ -48,6 +51,19 @@ public class BlingController {
          SyncProductsResult result = maxPages != null ? blingService.syncProducts(maxPages) : blingService.syncProducts();
          return ResponseEntity.ok(result);
      }
+
+    /** Sync completo (categorias + produtos) em background; acompanhar por GET /bling/sync/status. */
+    @PostMapping("/sync/full")
+    public ResponseEntity<BlingSyncStatusOutput> startFullSync() {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(blingFullSyncService.start());
+    }
+
+    @GetMapping("/sync/status")
+    public ResponseEntity<BlingSyncStatusOutput> syncStatus() {
+        return blingFullSyncService.getLatestStatus()
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
 
      @GetMapping("/debug/inspect")
      public ResponseEntity<String> debugInspect(

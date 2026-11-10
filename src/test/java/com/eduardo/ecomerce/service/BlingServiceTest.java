@@ -14,6 +14,9 @@ import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.eduardo.ecomerce.infra.bling.BlingUnauthorizedException;
+import com.eduardo.ecomerce.service.bling.SyncProgressListener;
+import com.eduardo.ecomerce.service.bling.SyncProgressListener.ItemKind;
+import com.eduardo.ecomerce.service.bling.SyncProgressListener.ItemOutcome;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -496,5 +499,130 @@ class BlingServiceTest {
 
         verify(blingImageSyncService, times(1)).syncImages(eq(500L), eq("Preto"), any());
         verify(productImageRepository, times(1)).save(any(ProductImage.class));
+    }
+
+    @Test
+    void syncProductsWithListenerReportsTotalEachItemAndDeactivatedCount() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = new Category();
+        category.setBlingCategoryId(77L);
+
+        when(blingClient.listProducts("token", 1)).thenReturn(json("""
+            {"data":[
+              {"id":500,"nome":"Short Moletinho","codigo":"PAI-500","preco":"34.99","formato":"V"},
+              {"id":501,"nome":"Short Moletinho Preto 4","codigo":"SKU-501","preco":"34.99","formato":"S","idProdutoPai":500},
+              {"id":600,"nome":"Body Liso","codigo":"SKU-600","preco":"20.00","formato":"S"}
+            ]}
+            """));
+        when(blingClient.listProducts("token", 2)).thenReturn(json("""
+            {"data":[]}
+            """));
+        when(blingClient.getProductById("token", 501L)).thenReturn(json("""
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":3},
+            "variacao":{"nome":"Cor:Preto;Tamanho:4"}}}
+            """));
+        when(blingClient.getProductById("token", 600L)).thenReturn(json("""
+            {"data":{"estoque":{"saldoVirtualTotal":1}}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(500L)).thenReturn(Optional.empty());
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productVariantRepository.findByBlingVariationId(501L)).thenReturn(Optional.empty());
+        when(productVariantRepository.findBySku("SKU-501")).thenReturn(Optional.empty());
+        when(productRepository.deactivateMissingFromBling(Set.of(500L, 600L))).thenReturn(2);
+        RecordingListener listener = new RecordingListener();
+
+        service.syncProducts(listener);
+
+        assertThat(listener.total).isEqualTo(2);
+        assertThat(listener.items).containsExactly(
+                "501|Short Moletinho Preto 4|VARIANT|SYNCED",
+                "600|Body Liso|STANDALONE|SKIPPED"
+        );
+        assertThat(listener.reconciling).isTrue();
+        assertThat(listener.deactivated).isEqualTo(2);
+    }
+
+    @Test
+    void syncProductsWithListenerReportsFailedWhenItemThrowsAndKeepsGoing() throws Exception {
+        validToken();
+        when(blingClient.listProducts("token", 1)).thenReturn(json("""
+            {"data":[
+              {"id":700,"nome":"Quebrado","codigo":"SKU-700","preco":"10.00","formato":"S"},
+              {"id":701,"nome":"Sem categoria","codigo":"SKU-701","preco":"10.00","formato":"S"}
+            ]}
+            """));
+        when(blingClient.listProducts("token", 2)).thenReturn(json("""
+            {"data":[]}
+            """));
+        when(blingClient.getProductById("token", 700L)).thenThrow(new IllegalStateException("boom"));
+        when(blingClient.getProductById("token", 701L)).thenReturn(json("""
+            {"data":{}}
+            """));
+        RecordingListener listener = new RecordingListener();
+
+        service.syncProducts(listener);
+
+        assertThat(listener.items).containsExactly(
+                "700|Quebrado|STANDALONE|FAILED",
+                "701|Sem categoria|STANDALONE|SKIPPED"
+        );
+    }
+
+    @Test
+    void syncProductsWithLimitedPagesStillSkipsReconcile() throws Exception {
+        validToken();
+        when(blingClient.listProducts("token", 1)).thenReturn(json("""
+            {"data":[]}
+            """));
+
+        service.syncProducts(1);
+
+        verify(productRepository, never()).deactivateMissingFromBling(any());
+    }
+
+    @Test
+    void syncCategoriesReturnsNumberOfCategoriesProcessed() throws Exception {
+        validToken();
+        when(blingClient.getCategories("token", 1, 100)).thenReturn(json("""
+            {"data":[{"id":1,"descricao":"Meninas"},{"id":2,"descricao":"Vestidos","categoriaPai":{"id":1}}]}
+            """));
+        when(blingClient.getCategories("token", 2, 100)).thenReturn(json("""
+            {"data":[]}
+            """));
+        when(categoryRepository.save(any(Category.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        int processed = service.syncCategories();
+
+        assertThat(processed).isEqualTo(2);
+    }
+
+    private static class RecordingListener implements SyncProgressListener {
+        int total;
+        boolean reconciling;
+        int deactivated;
+        final List<String> items = new ArrayList<>();
+
+        @Override
+        public void onTotal(int totalItems) {
+            this.total = totalItems;
+        }
+
+        @Override
+        public void onItem(Long blingId, String name, ItemKind kind, ItemOutcome outcome) {
+            items.add(blingId + "|" + name + "|" + kind + "|" + outcome);
+        }
+
+        @Override
+        public void onReconciling() {
+            this.reconciling = true;
+        }
+
+        @Override
+        public void onDeactivated(int count) {
+            this.deactivated = count;
+        }
     }
 }

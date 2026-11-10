@@ -1,5 +1,8 @@
 package com.eduardo.ecomerce.service;
 
+import com.eduardo.ecomerce.service.bling.SyncProgressListener;
+import com.eduardo.ecomerce.service.bling.SyncProgressListener.ItemKind;
+import com.eduardo.ecomerce.service.bling.SyncProgressListener.ItemOutcome;
 import com.eduardo.ecomerce.domain.blingtoken.BlingToken;
 import com.eduardo.ecomerce.domain.blingtoken.BlingTokenRepository;
 import com.eduardo.ecomerce.domain.category.Category;
@@ -165,7 +168,7 @@ public class BlingService {
     }
 
 
-    public void syncCategories() {
+    public int syncCategories() {
         AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
         int page = 1;
         List<JsonNode> categoryNodes = new ArrayList<>();
@@ -201,6 +204,7 @@ public class BlingService {
 
 
         log.info("Sincronização de categorias do Bling concluída: {} categorias processadas", categoryNodes.size());
+        return categoryNodes.size();
     }
 
     private Category upsertCategory(JsonNode categoryNode) {
@@ -272,55 +276,72 @@ public class BlingService {
 
 
     public SyncProductsResult syncProducts() {
-        return syncProducts(MAX_PAGES_SAFETY_LIMIT, true);
+        return syncProducts(MAX_PAGES_SAFETY_LIMIT, true, SyncProgressListener.NOOP);
     }
 
     public SyncProductsResult syncProducts(int maxPages) {
-        return syncProducts(maxPages, maxPages >= MAX_PAGES_SAFETY_LIMIT);
+        return syncProducts(maxPages, maxPages >= MAX_PAGES_SAFETY_LIMIT, SyncProgressListener.NOOP);
+    }
+
+    /** Sync completo (todas as páginas + reconcile) avisando o progresso item a item. */
+    public SyncProductsResult syncProducts(SyncProgressListener listener) {
+        return syncProducts(MAX_PAGES_SAFETY_LIMIT, true, listener);
     }
 
 
-    private SyncProductsResult syncProducts(int maxPages, boolean reconcile) {
+    private SyncProductsResult syncProducts(int maxPages, boolean reconcile, SyncProgressListener listener) {
         AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
 
         List<ProductListItem> allItems = fetchAllProductListItems(tokenRef, maxPages);
         ClassifiedListItems classified = classifyListItems(allItems);
+        listener.onTotal(classified.variantItems().size() + classified.standaloneItems().size());
 
         MediaSyncState mediaState = new MediaSyncState();
         int variantsSynced = 0;
         int variantsSkipped = 0;
 
         for (ProductListItem item : classified.variantItems()) {
+            ItemOutcome outcome;
             try {
                 boolean synced = upsertProductFromVariation(tokenRef, item, classified.parentNames(), mediaState);
-                if (synced) {
-                    variantsSynced++;
-                } else {
-                    variantsSkipped++;
-                }
+                outcome = synced ? ItemOutcome.SYNCED : ItemOutcome.SKIPPED;
             } catch (Exception e) {
                 log.error("Falha ao sincronizar variação do Bling (id={})", item.id(), e);
+                outcome = ItemOutcome.FAILED;
+            }
+            if (outcome == ItemOutcome.SYNCED) {
+                variantsSynced++;
+            } else {
                 variantsSkipped++;
             }
+            listener.onItem(item.id(), item.nome(), ItemKind.VARIANT, outcome);
         }
 
         int standaloneSynced = 0;
         int standaloneSkipped = 0;
 
         for (ProductListItem item : classified.standaloneItems()) {
+            ItemOutcome outcome;
             try {
                 boolean synced = upsertProductSimples(tokenRef, item);
-                if (synced) {
-                    standaloneSynced++;
-                } else {
-                    standaloneSkipped++;
-                }
+                outcome = synced ? ItemOutcome.SYNCED : ItemOutcome.SKIPPED;
             } catch (Exception e) {
+                log.error("Falha ao sincronizar produto simples do Bling (id={})", item.id(), e);
+                outcome = ItemOutcome.FAILED;
+            }
+            if (outcome == ItemOutcome.SYNCED) {
+                standaloneSynced++;
+            } else {
                 standaloneSkipped++;
             }
+            listener.onItem(item.id(), item.nome(), ItemKind.STANDALONE, outcome);
         }
 
-        int deactivated = reconcile ? reconcileRemovedProducts(classified) : 0;
+        if (reconcile) {
+            listener.onReconciling();
+            int deactivated = reconcileRemovedProducts(classified);
+            listener.onDeactivated(deactivated);
+        }
 
         SyncProductsResult result = new SyncProductsResult(
                 classified.parentNames().size(),

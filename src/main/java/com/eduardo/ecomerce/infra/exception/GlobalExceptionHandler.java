@@ -1,5 +1,6 @@
 package com.eduardo.ecomerce.infra.exception;
 
+import com.eduardo.ecomerce.service.bling.BlingSyncAlreadyRunningException;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
@@ -24,6 +25,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(ResourceNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(BlingSyncAlreadyRunningException.class)
+    public ResponseEntity<Map<String, String>> handleBlingSyncAlreadyRunning(BlingSyncAlreadyRunningException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("error", ex.getMessage()));
     }
 
