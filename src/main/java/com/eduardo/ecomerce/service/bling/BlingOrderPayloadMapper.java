@@ -57,6 +57,7 @@ public class BlingOrderPayloadMapper {
         if (order.getUser() != null && order.getUser().getEmail() != null) {
             contact.put("email", order.getUser().getEmail());
         }
+        putText(contact, "celular", order.getCustomerPhone());
 
         ObjectNode geral = contact.putObject("endereco").putObject("geral");
         putText(geral, "endereco", order.getRecipientStreet());

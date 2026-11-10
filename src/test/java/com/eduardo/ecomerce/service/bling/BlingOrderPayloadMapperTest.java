@@ -55,6 +55,7 @@ class BlingOrderPayloadMapperTest {
         order.setPaymentId("1234567890");
         order.setPaymentMethod("pix");
         order.setCustomerDocument("52998224725");
+        order.setCustomerPhone("17996247172");
         order.setShippingMethod("PAC");
         order.setShippingPrice(new BigDecimal("18.50"));
         order.setShippingDeadlineDays(8);
@@ -486,5 +487,17 @@ class BlingOrderPayloadMapperTest {
         assertThat(address.path("cep").asText()).isEqualTo("15000000");
         assertThat(address.path("municipio").asText()).isEqualTo("São José do Rio Preto");
         assertThat(address.path("uf").asText()).isEqualTo("SP");
+    }
+
+    @Test
+    void toContact_comTelefone_enviaCelular() {
+        assertThat(mapper.toContact(order).path("celular").asText()).isEqualTo("17996247172");
+    }
+
+    @Test
+    void toContact_semTelefone_naoEnviaCelular() {
+        order.setCustomerPhone(null);
+
+        assertThat(mapper.toContact(order).has("celular")).isFalse();
     }
 }

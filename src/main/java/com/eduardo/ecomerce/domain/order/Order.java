@@ -93,6 +93,9 @@ public class Order {
     @Column(name = "customer_document", length = 14)
     private String customerDocument;
 
+    @Column(name = "customer_phone", length = 11)
+    private String customerPhone;
+
     @Column(name = "bling_order_id", unique = true)
     private Long blingOrderId;
 

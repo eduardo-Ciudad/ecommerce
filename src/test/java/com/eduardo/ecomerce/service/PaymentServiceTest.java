@@ -97,7 +97,7 @@ class PaymentServiceTest {
 
     @Test
     void processPayment_cartaoAprovado_atualizaPedidoParaPago() throws Exception {
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
 
         Payment payment = mockPayment("987654321", "approved", "accredited", orderId);
 
@@ -113,7 +113,7 @@ class PaymentServiceTest {
 
     @Test
     void processPayment_cartaoRejeitado_mantemPedidoPendingSemDevolverEstoque() throws Exception {
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
 
         Payment payment = mockPayment("987654322", "rejected", "cc_rejected_insufficient_amount", orderId);
 
@@ -133,7 +133,7 @@ class PaymentServiceTest {
 
     @Test
     void processPayment_pix_retornaQrCodeNaResposta() throws Exception {
-        PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null, null, null, null, null);
 
         Payment payment = mockPixPayment("987654323", "pending", orderId, "00020126...codigo-pix", "base64-qr-image");
 
@@ -148,7 +148,7 @@ class PaymentServiceTest {
 
     @Test
     void processPayment_pedidoNaoEncontrado_lancaExcecao() {
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
 
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.empty());
 
@@ -159,7 +159,7 @@ class PaymentServiceTest {
     @Test
     @DisplayName("Deve rejeitar pagamento se o pedido não pertence ao usuário autenticado")
     void processPayment_pedidoNaoPertenceAoUsuario_lancaBusinessException() throws Exception {
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
 
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
@@ -175,7 +175,7 @@ class PaymentServiceTest {
     void processPayment_pedidoJaPossuiPagamento_lancaBusinessException() throws Exception {
         order.setPaymentId("existing-payment-id");
         order.setPaymentStatus("pending");
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
 
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
@@ -190,7 +190,7 @@ class PaymentServiceTest {
     @DisplayName("Deve rejeitar pagamento se o pedido não está pendente")
     void processPayment_pedidoNaoPendente_lancaBusinessException() throws Exception {
         order.setStatus(OrderStatus.PAID);
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
 
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
@@ -306,7 +306,7 @@ class PaymentServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"approved", "pending"})
     void processPayment_pagamentoOrfao_reaproveitaSemCriar(String status) throws Exception {
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
         Payment payment = mockPayment("820", status, "detail", orderId);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         doReturn(PaymentService.OrphanedPaymentLookup.found(payment))
@@ -326,7 +326,7 @@ class PaymentServiceTest {
 
     @Test
     void processPayment_lookupNotFound_criaNovoPagamento() throws Exception {
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
         Payment payment = mockPayment("821", "approved", "detail", orderId);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
@@ -343,7 +343,7 @@ class PaymentServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"AMBIGUOUS", "FAILED"})
     void processPayment_lookupInconclusivo_lancaSemCriarNemAlterarPedido(String outcome) throws Exception {
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         PaymentService.OrphanedPaymentLookup lookup = "AMBIGUOUS".equals(outcome)
                 ? PaymentService.OrphanedPaymentLookup.ambiguous()
@@ -422,7 +422,7 @@ class PaymentServiceTest {
 
     @Test
     void processPayment_pagamentoAprovado_naoDevolveEstoque() throws Exception {
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         Payment payment = mockPayment("501", "approved", "accredited", orderId);
         when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
@@ -583,7 +583,7 @@ class PaymentServiceTest {
     void processPayment_aposTentativaFalha_permiteNovaTentativa(String previousStatus) throws Exception {
         order.setPaymentId("900");
         order.setPaymentStatus(previousStatus);
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_novo", 1, "master", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_novo", 1, "master", null, null, null, null, null);
         Payment payment = mockPayment("901", "approved", "accredited", orderId);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
@@ -603,7 +603,7 @@ class PaymentServiceTest {
     void processPayment_comTentativaAtiva_bloqueiaSemCriarPagamento(String activeStatus) throws Exception {
         order.setPaymentId("910");
         order.setPaymentStatus(activeStatus);
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.processPayment(input, user.getEmail()))
@@ -618,7 +618,7 @@ class PaymentServiceTest {
     @Test
     void processPayment_foraDaJanelaDePagamento_bloqueiaSemCriarPagamento() throws Exception {
         order.setCreatedAt(LocalDateTime.now().minusMinutes(Order.PAYMENT_WINDOW_MINUTES + 1));
-        PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null, null, null, null, null);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.processPayment(input, user.getEmail()))
@@ -635,7 +635,7 @@ class PaymentServiceTest {
         order.setPaymentId("920");
         order.setPaymentStatus("rejected");
         order.setCreatedAt(LocalDateTime.now().minusMinutes(Order.PAYMENT_WINDOW_MINUTES + 5));
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.processPayment(input, user.getEmail()))
@@ -649,7 +649,7 @@ class PaymentServiceTest {
     void processPayment_novaTentativaTambemRecusada_continuaPendingComUltimoPayment() throws Exception {
         order.setPaymentId("930");
         order.setPaymentStatus("rejected");
-        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null);
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
         Payment payment = mockPayment("931", "rejected", "cc_rejected_other_reason", orderId);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
@@ -723,7 +723,7 @@ class PaymentServiceTest {
     @Test
     void processPayment_aprovado_marcaPaidComPaidAtEBlingPendingEPublicaEvento() throws Exception {
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null,
-                "CPF", "529.982.247-25", null);
+                "CPF", "529.982.247-25", null, null);
         Payment payment = mockPayment("1001", "approved", "accredited", orderId);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
@@ -740,7 +740,7 @@ class PaymentServiceTest {
     @ValueSource(strings = {"pix", "credit_card"})
     void processPayment_gravaCustomerDocumentSoDigitosEPaymentMethod(String method) throws Exception {
         PaymentInput input = new PaymentInput(orderId, method, "tok_123", 1, "visa", null,
-                "CPF", "529.982.247-25", null);
+                "CPF", "529.982.247-25", null, null);
         Payment payment = mockPayment("1002", "pending", null, orderId);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
@@ -751,11 +751,24 @@ class PaymentServiceTest {
         assertThat(order.getPaymentMethod()).isEqualTo(method);
     }
 
+    @Test
+    void processPayment_gravaCustomerPhoneSoDigitos() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null,
+                "CPF", "529.982.247-25", null, "(17) 99624-7172");
+        Payment payment = mockPayment("1004", "pending", null, orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(order.getCustomerPhone()).isEqualTo("17996247172");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"rejected", "pending", "in_process"})
     void processPayment_naoAprovado_naoMarcaPaidNemPublicaEvento(String status) throws Exception {
         PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null,
-                "CPF", "52998224725", null);
+                "CPF", "52998224725", null, null);
         Payment payment = mockPayment("1003", status, null, orderId);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
@@ -771,7 +784,7 @@ class PaymentServiceTest {
     @Test
     void processPayment_pagamentoOrfaoAprovado_publicaEvento() throws Exception {
         PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null,
-                "CPF", "52998224725", null);
+                "CPF", "52998224725", null, null);
         Payment payment = mockPayment("1004", "approved", "accredited", orderId);
         when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
         doReturn(PaymentService.OrphanedPaymentLookup.found(payment))

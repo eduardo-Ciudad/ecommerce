@@ -33,6 +33,10 @@ public record PaymentInput(
         String payerDocNumber,
 
         @Size(max = 255)
-        String deviceId
+        String deviceId,
+
+        @NotBlank(message = "Celular é obrigatório")
+        @Pattern(regexp = "^\\(?\\d{2}\\)?[\\s-]?\\d{4,5}-?\\d{4}$", message = "Celular inválido")
+        String payerPhone
 ) {
 }

@@ -145,6 +145,7 @@ public class PaymentService {
         order.setPaymentStatus(payment.getStatus());
         // reflete sempre a última tentativa (a aprovada é sempre a última)
         order.setCustomerDocument(DocumentNumbers.onlyDigits(input.payerDocNumber()));
+        order.setCustomerPhone(DocumentNumbers.onlyDigits(input.payerPhone()));
         order.setPaymentMethod(input.paymentMethod());
 
         switch (payment.getStatus()) {

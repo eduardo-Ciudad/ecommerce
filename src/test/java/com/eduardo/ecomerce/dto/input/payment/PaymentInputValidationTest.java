@@ -29,8 +29,14 @@ class PaymentInputValidationTest {
         factory.close();
     }
 
+    private static final String VALID_PHONE = "(17) 99624-7172";
+
     private static PaymentInput pix(String docType, String docNumber) {
-        return new PaymentInput(UUID.randomUUID(), "pix", null, null, null, null, docType, docNumber, null);
+        return pixWithPhone(docType, docNumber, VALID_PHONE);
+    }
+
+    private static PaymentInput pixWithPhone(String docType, String docNumber, String phone) {
+        return new PaymentInput(UUID.randomUUID(), "pix", null, null, null, null, docType, docNumber, null, phone);
     }
 
     @Test
@@ -91,5 +97,39 @@ class PaymentInputValidationTest {
 
         assertThat(violations).hasSize(1);
         assertThat(violations.iterator().next().getPropertyPath().toString()).isEqualTo("payerDocType");
+    }
+
+    @Test
+    void celularSoDigitosComDDD_semViolacao() {
+        assertThat(validator.validate(pixWithPhone("CPF", "52998224725", "17996247172"))).isEmpty();
+    }
+
+    @Test
+    void telefoneFixoComDezDigitos_semViolacao() {
+        assertThat(validator.validate(pixWithPhone("CPF", "52998224725", "(17) 3232-1234"))).isEmpty();
+    }
+
+    @Test
+    void semTelefone_umaViolacaoNoTelefone() {
+        Set<ConstraintViolation<PaymentInput>> violations = validator.validate(pixWithPhone("CPF", "52998224725", null));
+
+        assertThat(violations).hasSize(1);
+        ConstraintViolation<PaymentInput> v = violations.iterator().next();
+        assertThat(v.getPropertyPath().toString()).isEqualTo("payerPhone");
+        assertThat(v.getMessage()).isEqualTo("Celular é obrigatório");
+    }
+
+    @Test
+    void telefoneSemDDD_violacaoTelefoneInvalido() {
+        Set<ConstraintViolation<PaymentInput>> violations = validator.validate(pixWithPhone("CPF", "52998224725", "99624-7172"));
+
+        assertThat(violations).extracting(ConstraintViolation::getMessage).containsExactly("Celular inválido");
+    }
+
+    @Test
+    void telefoneComLetras_violacaoTelefoneInvalido() {
+        Set<ConstraintViolation<PaymentInput>> violations = validator.validate(pixWithPhone("CPF", "52998224725", "17abc247172"));
+
+        assertThat(violations).extracting(ConstraintViolation::getMessage).containsExactly("Celular inválido");
     }
 }
