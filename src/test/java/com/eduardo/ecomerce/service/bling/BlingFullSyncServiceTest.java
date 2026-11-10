@@ -339,6 +339,19 @@ class BlingFullSyncServiceTest {
         assertThat(service.getLatestStatus()).isEmpty();
     }
 
+    @Test
+    void datesAreRecordedInStoreTimeEvenWhenServerClockIsUtc() {
+        Clock utcClock = Clock.fixed(Instant.parse("2026-11-10T17:00:00Z"), ZoneId.of("UTC"));
+        BlingFullSyncService service = new BlingFullSyncService(blingService, runRepository, Runnable::run, utcClock);
+        when(blingService.syncProducts(any(SyncProgressListener.class))).thenReturn(EMPTY_RESULT);
+
+        service.start();
+
+        BlingSyncStatusOutput status = latest(service);
+        assertThat(status.startedAt()).isEqualTo(LocalDateTime.of(2026, 11, 10, 14, 0));
+        assertThat(status.finishedAt()).isEqualTo(LocalDateTime.of(2026, 11, 10, 14, 0));
+    }
+
     private static Answer<SyncProductsResult> products(java.util.function.Consumer<SyncProgressListener> script) {
         return invocation -> {
             script.accept(invocation.getArgument(0));

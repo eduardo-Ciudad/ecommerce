@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -38,6 +39,7 @@ public class BlingFullSyncService {
     static final int PERSIST_EVERY_ITEMS = 20;
     static final int MAX_ERROR_LENGTH = 1000;
     static final String INTERRUPTED_MESSAGE = "Interrompido por reinício do servidor";
+    static final ZoneId STORE_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private final BlingService blingService;
     private final BlingSyncRunRepository runRepository;
@@ -177,8 +179,9 @@ public class BlingFullSyncService {
         }
     }
 
+    /** O container roda em UTC; as datas do sync são exibidas no admin no horário da loja. */
     private LocalDateTime now() {
-        return LocalDateTime.now(clock);
+        return LocalDateTime.now(clock.withZone(STORE_ZONE));
     }
 
     private static String describe(Exception e) {
