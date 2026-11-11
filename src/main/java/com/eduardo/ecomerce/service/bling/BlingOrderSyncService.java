@@ -122,13 +122,25 @@ public class BlingOrderSyncService {
     }
 
     private Long resolveContact(Order order) {
-        if (order.isLocalSale()) {
-            // venda de balcão: contato genérico único, o nome do cliente fica só no site e nas observações
+        String phone = order.getCustomerPhone();
+        boolean hasPhone = phone != null && !phone.isBlank();
+        if (order.isLocalSale() && !hasPhone) {
+            // venda local anterior ao celular obrigatório no balcão: contato genérico configurado
             return properties.localContactId();
         }
+
         String document = order.getCustomerDocument();
         if (document != null && !document.isBlank()) {
             JsonNode found = blingService.callBling(token -> blingClient.findContactsByDocument(token, document));
+            Long existingId = firstId(found);
+            if (existingId != null) {
+                return existingId;
+            }
+        }
+
+        if (order.isLocalSale()) {
+            // cliente de balcão sem CPF: o celular identifica quem já comprou antes
+            JsonNode found = blingService.callBling(token -> blingClient.findContactsByPhone(token, phone));
             Long existingId = firstId(found);
             if (existingId != null) {
                 return existingId;

@@ -468,6 +468,27 @@ class BlingOrderPayloadMapperTest {
     }
 
     @Test
+    void toContact_vendaLocal_nomeDoClienteDoBalcaoECelularSemEmailDoAdmin() {
+        asLocalSale("cash", "Cris vizinha");
+
+        JsonNode contact = mapper.toContact(order);
+
+        assertThat(contact.path("nome").asText()).isEqualTo("Cris vizinha");
+        assertThat(contact.path("celular").asText()).isEqualTo("17996247172");
+        assertThat(contact.path("tipo").asText()).isEqualTo("F");
+        assertThat(contact.has("email")).isFalse();
+        assertThat(contact.has("numeroDocumento")).isFalse();
+    }
+
+    @Test
+    void toContact_vendaLocalComCpf_enviaDocumento() {
+        asLocalSale("cash", "Cris vizinha");
+        order.setCustomerDocument("52998224725");
+
+        assertThat(mapper.toContact(order).path("numeroDocumento").asText()).isEqualTo("52998224725");
+    }
+
+    @Test
     void toContact_usuarioSemNome_usaDestinatario() {
         order.getUser().setName(" ");
 

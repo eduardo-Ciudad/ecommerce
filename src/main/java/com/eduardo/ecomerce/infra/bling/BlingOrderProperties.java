@@ -25,7 +25,8 @@ public record BlingOrderProperties(
     }
 
     /**
-     * Venda local (bling.orders.local.*): contato genérico único ("Consumidor Balcão"),
+     * Venda local (bling.orders.local.*): contato genérico ("Consumidor Balcão") só como fallback
+     * para vendas sem celular,
      * situação do pedido (Atendido) e uma forma de pagamento do Bling para cada meio do balcão.
      */
     public record Local(Long contactId, Long situationId, LocalPaymentMethods paymentMethod) {

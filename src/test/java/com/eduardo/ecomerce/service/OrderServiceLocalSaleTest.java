@@ -48,6 +48,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class OrderServiceLocalSaleTest {
 
+    private static final String PHONE = "(17) 99624-7172";
+
     private static final Instant NOW = Instant.parse("2026-10-30T23:15:00Z");
 
     @Mock private OrderRepository orderRepository;
@@ -110,7 +112,7 @@ class OrderServiceLocalSaleTest {
     @Test
     void vendaLocal_registraPedidoLocalEntregueComBaixaDeEstoqueESnapshot() {
         CreateLocalSaleInput input = new CreateLocalSaleInput(
-                List.of(new Item(vestido.getId(), 2)), LocalPaymentMethod.STORE_CREDIT, "  Cris vizinha ", null);
+                List.of(new Item(vestido.getId(), 2)), LocalPaymentMethod.STORE_CREDIT, "  Cris vizinha ", PHONE, null, null);
 
         OrderOutput output = orderService.createLocalSale(adminId, input);
 
@@ -145,7 +147,7 @@ class OrderServiceLocalSaleTest {
     @Test
     void vendaLocal_publicaOrderPaidEventParaIrAoBling() {
         orderService.createLocalSale(adminId, new CreateLocalSaleInput(
-                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.CASH, null, null));
+                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.CASH, null, PHONE, null, null));
 
         ArgumentCaptor<OrderPaidEvent> captor = ArgumentCaptor.forClass(OrderPaidEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
@@ -155,15 +157,40 @@ class OrderServiceLocalSaleTest {
     @Test
     void vendaLocal_anonima_nomeEmBrancoViraNull() {
         orderService.createLocalSale(adminId, new CreateLocalSaleInput(
-                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.PIX, "   ", null));
+                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.PIX, "   ", PHONE, null, null));
 
         assertThat(savedOrder().getCustomerName()).isNull();
     }
 
     @Test
+    void vendaLocal_gravaCelularSoComDigitos() {
+        orderService.createLocalSale(adminId, new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.CASH, "Cris vizinha", PHONE, null, null));
+
+        assertThat(savedOrder().getCustomerPhone()).isEqualTo("17996247172");
+    }
+
+    @Test
+    void vendaLocal_comCpf_gravaDocumentoSoComDigitos() {
+        orderService.createLocalSale(adminId, new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.CASH, "Cris vizinha", PHONE,
+                "529.982.247-25", null));
+
+        assertThat(savedOrder().getCustomerDocument()).isEqualTo("52998224725");
+    }
+
+    @Test
+    void vendaLocal_cpfEmBranco_documentoFicaNull() {
+        orderService.createLocalSale(adminId, new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.CASH, "Cris vizinha", PHONE, "  ", null));
+
+        assertThat(savedOrder().getCustomerDocument()).isNull();
+    }
+
+    @Test
     void vendaLocal_descontoEmReais_abateDoTotal() {
         orderService.createLocalSale(adminId, new CreateLocalSaleInput(
-                List.of(new Item(vestido.getId(), 2)), LocalPaymentMethod.CARD_MACHINE, null, new BigDecimal("9.80")));
+                List.of(new Item(vestido.getId(), 2)), LocalPaymentMethod.CARD_MACHINE, null, PHONE, null, new BigDecimal("9.80")));
 
         Order order = savedOrder();
         assertThat(order.getDiscountAmount()).isEqualByComparingTo("9.80");
@@ -173,7 +200,7 @@ class OrderServiceLocalSaleTest {
     @Test
     void vendaLocal_descontoIgualOuMaiorQueOsItens_rejeitaSemSalvarNemPublicar() {
         CreateLocalSaleInput input = new CreateLocalSaleInput(
-                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.CASH, null, new BigDecimal("49.90"));
+                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.CASH, null, PHONE, null, new BigDecimal("49.90"));
 
         assertThatThrownBy(() -> orderService.createLocalSale(adminId, input))
                 .isInstanceOf(BusinessException.class)
@@ -187,7 +214,7 @@ class OrderServiceLocalSaleTest {
     void vendaLocal_varianteRepetida_somaQuantidadesNumItemSo() {
         orderService.createLocalSale(adminId, new CreateLocalSaleInput(
                 List.of(new Item(vestido.getId(), 1), new Item(vestido.getId(), 2)),
-                LocalPaymentMethod.CASH, null, null));
+                LocalPaymentMethod.CASH, null, PHONE, null, null));
 
         Order order = savedOrder();
         assertThat(order.getItems()).hasSize(1);
@@ -199,7 +226,7 @@ class OrderServiceLocalSaleTest {
     void vendaLocal_estoqueInsuficienteSomandoRepetidas_rejeitaSemBaixarEstoque() {
         CreateLocalSaleInput input = new CreateLocalSaleInput(
                 List.of(new Item(vestido.getId(), 3), new Item(vestido.getId(), 3)),
-                LocalPaymentMethod.CASH, null, null);
+                LocalPaymentMethod.CASH, null, PHONE, null, null);
 
         assertThatThrownBy(() -> orderService.createLocalSale(adminId, input))
                 .isInstanceOf(BusinessException.class)
@@ -216,7 +243,7 @@ class OrderServiceLocalSaleTest {
         when(productVariantRepository.findById(missing)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orderService.createLocalSale(adminId, new CreateLocalSaleInput(
-                List.of(new Item(missing, 1)), LocalPaymentMethod.CASH, null, null)))
+                List.of(new Item(missing, 1)), LocalPaymentMethod.CASH, null, PHONE, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         verify(orderRepository, never()).save(any());
@@ -225,7 +252,7 @@ class OrderServiceLocalSaleTest {
     @Test
     void vendaLocal_naoEnviaEmailDeNovoPedido() {
         orderService.createLocalSale(adminId, new CreateLocalSaleInput(
-                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.PAYMENT_LINK, null, null));
+                List.of(new Item(vestido.getId(), 1)), LocalPaymentMethod.PAYMENT_LINK, null, PHONE, null, null));
 
         verifyNoInteractions(emailService);
     }

@@ -27,6 +27,7 @@ import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.email.EmailService;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
+import com.eduardo.ecomerce.infra.validation.DocumentNumbers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -171,6 +172,8 @@ public class OrderService {
         order.setStatus(OrderStatus.PENDING);
         order.setPaymentMethod(input.paymentMethod().code());
         order.setCustomerName(blankToNull(input.customerName()));
+        order.setCustomerPhone(DocumentNumbers.onlyDigits(input.customerPhone()));
+        order.setCustomerDocument(DocumentNumbers.onlyDigits(blankToNull(input.customerDocument())));
 
         BigDecimal subtotal = BigDecimal.ZERO;
         for (Map.Entry<UUID, Integer> entry : quantities.entrySet()) {

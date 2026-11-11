@@ -183,10 +183,15 @@ class BlingOrderSyncServiceTest {
         verify(mapper).toSaleOrder(order, CONTACT_ID);
     }
 
-    @Test
-    void sync_vendaLocal_usaContatoGenericoSemBuscarNemCriarContato() {
+    private void asLocalSale(String phone) {
         order.setChannel(com.eduardo.ecomerce.domain.order.OrderChannel.LOCAL);
         order.setCustomerDocument(null);
+        order.setCustomerPhone(phone);
+    }
+
+    @Test
+    void sync_vendaLocalSemCelular_usaContatoGenericoSemBuscarNemCriarContato() {
+        asLocalSale(null);
         noExistingSaleOrder();
         when(mapper.toSaleOrder(order, 777L)).thenReturn(salePayload);
         saleOrderCreated();
@@ -195,9 +200,68 @@ class BlingOrderSyncServiceTest {
 
         verify(mapper).toSaleOrder(order, 777L);
         verify(blingClient, never()).findContactsByDocument(anyString(), anyString());
+        verify(blingClient, never()).findContactsByPhone(anyString(), anyString());
         verify(blingClient, never()).createContact(anyString(), any());
         verify(mapper, never()).toContact(any());
         verify(blingClient).launchSaleOrderStock(eq(TOKEN), anyLong());
+    }
+
+    @Test
+    void sync_vendaLocal_contatoExistentePorCelular_reaproveitaSemCriar() {
+        asLocalSale("17996247172");
+        noExistingSaleOrder();
+        when(blingClient.findContactsByPhone(TOKEN, "17996247172"))
+                .thenReturn(node("{\"data\":[{\"id\":" + CONTACT_ID + "}]}"));
+        saleOrderCreated();
+
+        assertThat(service.sync(orderId)).isEqualTo(BlingSyncOutcome.SENT);
+
+        verify(mapper).toSaleOrder(order, CONTACT_ID);
+        verify(blingClient, never()).findContactsByDocument(anyString(), anyString());
+        verify(blingClient, never()).createContact(anyString(), any());
+    }
+
+    @Test
+    void sync_vendaLocal_celularNaoEncontrado_criaContato() {
+        asLocalSale("17996247172");
+        noExistingSaleOrder();
+        when(blingClient.findContactsByPhone(TOKEN, "17996247172")).thenReturn(node("{\"data\":[]}"));
+        when(blingClient.createContact(TOKEN, contactPayload))
+                .thenReturn(node("{\"data\":{\"id\":" + CONTACT_ID + "}}"));
+        saleOrderCreated();
+
+        assertThat(service.sync(orderId)).isEqualTo(BlingSyncOutcome.SENT);
+
+        verify(blingClient).createContact(TOKEN, contactPayload);
+        verify(mapper).toSaleOrder(order, CONTACT_ID);
+    }
+
+    @Test
+    void sync_vendaLocalComCpf_buscaPorDocumentoPrimeiroSemBuscarPorCelular() {
+        asLocalSale("17996247172");
+        order.setCustomerDocument("52998224725");
+        noExistingSaleOrder();
+        existingContact();
+        saleOrderCreated();
+
+        assertThat(service.sync(orderId)).isEqualTo(BlingSyncOutcome.SENT);
+
+        verify(blingClient, never()).findContactsByPhone(anyString(), anyString());
+        verify(blingClient, never()).createContact(anyString(), any());
+    }
+
+    @Test
+    void sync_pedidoDoSite_naoBuscaPorCelular() {
+        order.setCustomerPhone("17996247172");
+        noExistingSaleOrder();
+        when(blingClient.findContactsByDocument(TOKEN, "52998224725")).thenReturn(node("{\"data\":[]}"));
+        when(blingClient.createContact(TOKEN, contactPayload))
+                .thenReturn(node("{\"data\":{\"id\":" + CONTACT_ID + "}}"));
+        saleOrderCreated();
+
+        assertThat(service.sync(orderId)).isEqualTo(BlingSyncOutcome.SENT);
+
+        verify(blingClient, never()).findContactsByPhone(anyString(), anyString());
     }
 
     @Test

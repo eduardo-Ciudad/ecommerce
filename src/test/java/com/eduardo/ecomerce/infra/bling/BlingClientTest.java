@@ -87,6 +87,20 @@ class BlingClientTest {
     }
 
     @Test
+    void findContactsByPhone_fazGetComTelefoneNaQuery() throws Exception {
+        enqueueJson(200, "{\"data\":[{\"id\":555}]}");
+
+        JsonNode result = client.findContactsByPhone("access-token", "17996247172");
+
+        RecordedRequest request = server.takeRequest();
+        assertThat(request.getMethod()).isEqualTo("GET");
+        assertThat(request.getRequestUrl().encodedPath()).isEqualTo("/contatos");
+        assertThat(request.getRequestUrl().queryParameter("telefone")).isEqualTo("17996247172");
+        assertAuthHeaders(request);
+        assertThat(result.path("data").get(0).path("id").asLong()).isEqualTo(555L);
+    }
+
+    @Test
     void createContact_fazPostComCorpoJson() throws Exception {
         enqueueJson(201, "{\"data\":{\"id\":777}}");
         JsonNode body = mapper.readTree("{\"nome\":\"Maria\",\"tipo\":\"F\",\"situacao\":\"A\"}");

@@ -54,7 +54,8 @@ public class BlingOrderPayloadMapper {
             contact.put("numeroDocumento", document);
         }
         contact.put("indicadorIe", NAO_CONTRIBUINTE_ICMS);
-        if (order.getUser() != null && order.getUser().getEmail() != null) {
+        // na venda local o usuário do pedido é o admin que registrou: o e-mail dele não é do comprador
+        if (!order.isLocalSale() && order.getUser() != null && order.getUser().getEmail() != null) {
             contact.put("email", order.getUser().getEmail());
         }
         putText(contact, "celular", order.getCustomerPhone());
@@ -210,6 +211,9 @@ public class BlingOrderPayloadMapper {
     }
 
     private String buyerName(Order order) {
+        if (order.isLocalSale()) {
+            return order.getCustomerName();
+        }
         User user = order.getUser();
         return firstNonBlank(user != null ? user.getName() : null, order.getRecipientName());
     }

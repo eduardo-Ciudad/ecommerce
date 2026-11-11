@@ -121,6 +121,16 @@ public class BlingClient {
         );
     }
 
+    public JsonNode findContactsByPhone(String accessToken, String phoneDigits) {
+        return authenticatedGet(
+                accessToken,
+                uriBuilder -> uriBuilder
+                        .path("/contatos")
+                        .queryParam("telefone", phoneDigits)
+                        .build()
+        );
+    }
+
     public JsonNode createContact(String accessToken, JsonNode body) {
         return authenticatedPost(accessToken, uriBuilder -> uriBuilder.path("/contatos").build(), body);
     }
