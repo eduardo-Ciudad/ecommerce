@@ -27,6 +27,7 @@ import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.email.EmailService;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
+import com.eduardo.ecomerce.infra.shipping.FreeShippingPolicy;
 import com.eduardo.ecomerce.infra.validation.DocumentNumbers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +65,7 @@ public class OrderService {
     private final CouponService couponService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final FreeShippingPolicy freeShippingPolicy;
 
     public record ExpiringOrderSnapshot(UUID orderId, String paymentId, BigDecimal total) {}
 
@@ -106,7 +108,6 @@ public class OrderService {
         order.setStatus(OrderStatus.PENDING);
 
         order.setShippingMethod(shipping.method());
-        order.setShippingPrice(shipping.price());
         order.setShippingDeadlineDays(shipping.deadlineDays());
 
         order.setRecipientName(user.getName());
@@ -138,13 +139,18 @@ public class OrderService {
             order.setDiscountAmount(discount);
         }
 
-        BigDecimal total = subtotal.subtract(discount).add(shipping.price());
+        BigDecimal productsTotal = subtotal.subtract(discount);
+        ShippingOutput chargedShipping = freeShippingPolicy.apply(shipping, productsTotal);
+        order.setShippingPrice(chargedShipping.price());
+
+        BigDecimal total = productsTotal.add(chargedShipping.price());
 
         order.setTotal(total);
 
         orderRepository.save(order);
-        log.info("Pedido criado — usuário: {}, orderId: {}, cupom: {}, desconto: {}",
-                userId, order.getId(), order.getCouponCode(), order.getDiscountAmount());
+        log.info("Pedido criado — usuário: {}, orderId: {}, cupom: {}, desconto: {}, frete grátis: {}",
+                userId, order.getId(), order.getCouponCode(), order.getDiscountAmount(),
+                chargedShipping.freeShipping());
         cartItemRepository.deleteByCartId(cart.getId());
 
         OrderOutput output = toOutput(order);

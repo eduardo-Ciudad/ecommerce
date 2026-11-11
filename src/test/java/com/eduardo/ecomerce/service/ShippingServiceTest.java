@@ -3,6 +3,7 @@ package com.eduardo.ecomerce.service;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.shipping.CorreiosClient;
+import com.eduardo.ecomerce.infra.shipping.FreeShippingPolicy;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,11 +12,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -31,6 +34,9 @@ class ShippingServiceTest {
 
     @Mock
     private CorreiosClient correiosClient;
+
+    @Spy
+    private FreeShippingPolicy freeShippingPolicy = new FreeShippingPolicy(new BigDecimal("199.00"), Set.of("PAC", "SEDEX"));
 
     @InjectMocks
     private ShippingService shippingService;
@@ -188,5 +194,68 @@ class ShippingServiceTest {
         assertThatThrownBy(() -> shippingService.calculateByMethod("15046-806", "PAC"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("Não foi possível calcular o frete no momento");
+    }
+
+    // -------------------------------------------------------------------------
+    // frete grátis
+    // -------------------------------------------------------------------------
+
+    private void stubPacESedex() {
+        when(correiosClient.consultarPreco(eq(CODIGO_PAC), eq(CEP_ORIGEM), anyString(), anyInt(), anyInt(), anyInt(), anyInt()))
+                .thenReturn(preco("25,50"));
+        when(correiosClient.consultarPrazo(eq(CODIGO_PAC), eq(CEP_ORIGEM), anyString()))
+                .thenReturn(prazo(7));
+        when(correiosClient.consultarPreco(eq(CODIGO_SEDEX), eq(CEP_ORIGEM), anyString(), anyInt(), anyInt(), anyInt(), anyInt()))
+                .thenReturn(preco("45,90"));
+        when(correiosClient.consultarPrazo(eq(CODIGO_SEDEX), eq(CEP_ORIGEM), anyString()))
+                .thenReturn(prazo(2));
+    }
+
+    @Test
+    @DisplayName("calculate com subtotal a partir de 199 — PAC e SEDEX grátis, prazos mantidos")
+    void calculate_subtotalNoThreshold_ambosGratis() {
+        stubPacESedex();
+
+        List<ShippingOutput> result = shippingService.calculate("01310-100", new BigDecimal("199.00"));
+
+        assertThat(result).allSatisfy(option -> {
+            assertThat(option.price()).isEqualByComparingTo("0");
+            assertThat(option.freeShipping()).isTrue();
+        });
+        assertThat(result.get(0).deadlineDays()).isEqualTo(7);
+        assertThat(result.get(1).deadlineDays()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("calculate com subtotal abaixo de 199 — preços dos Correios sem alteração")
+    void calculate_subtotalAbaixo_precoNormal() {
+        stubPacESedex();
+
+        List<ShippingOutput> result = shippingService.calculate("01310-100", new BigDecimal("198.99"));
+
+        assertThat(result.get(0).price()).isEqualByComparingTo("25.50");
+        assertThat(result.get(1).price()).isEqualByComparingTo("45.90");
+        assertThat(result).noneMatch(ShippingOutput::freeShipping);
+    }
+
+    @Test
+    @DisplayName("calculate sem subtotal — comportamento antigo, sem frete grátis")
+    void calculate_semSubtotal_semFreteGratis() {
+        stubPacESedex();
+
+        List<ShippingOutput> result = shippingService.calculate("01310-100");
+
+        assertThat(result.get(0).price()).isEqualByComparingTo("25.50");
+        assertThat(result).noneMatch(ShippingOutput::freeShipping);
+    }
+
+    @Test
+    @DisplayName("freeShippingRule — expõe threshold e modalidades configurados")
+    void freeShippingRule_expoeConfiguracao() {
+        var rule = shippingService.freeShippingRule();
+
+        assertThat(rule.threshold()).isEqualByComparingTo("199.00");
+        assertThat(rule.methods()).containsExactlyInAnyOrder("PAC", "SEDEX");
+        verifyNoInteractions(correiosClient);
     }
 }

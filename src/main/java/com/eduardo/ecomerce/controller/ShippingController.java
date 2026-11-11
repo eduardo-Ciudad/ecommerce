@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.controller;
 
 
+import com.eduardo.ecomerce.dto.output.shipping.FreeShippingOutput;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.service.ShippingService;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
@@ -20,7 +22,13 @@ public class ShippingController {
     private final ShippingService shippingService;
 
     @GetMapping("/calculate")
-    public ResponseEntity<List<ShippingOutput>> calculate(@RequestParam String cep) {
-        return ResponseEntity.ok(shippingService.calculate(cep));
+    public ResponseEntity<List<ShippingOutput>> calculate(@RequestParam String cep,
+                                                          @RequestParam(required = false) BigDecimal subtotal) {
+        return ResponseEntity.ok(shippingService.calculate(cep, subtotal));
+    }
+
+    @GetMapping("/free-shipping")
+    public ResponseEntity<FreeShippingOutput> freeShipping() {
+        return ResponseEntity.ok(shippingService.freeShippingRule());
     }
 }

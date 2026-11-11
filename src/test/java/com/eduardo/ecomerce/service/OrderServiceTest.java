@@ -24,12 +24,14 @@ import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.email.EmailService;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
+import com.eduardo.ecomerce.infra.shipping.FreeShippingPolicy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Spy;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -39,6 +41,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -78,6 +81,9 @@ class OrderServiceTest {
 
     @Mock
     private EmailService emailService;
+
+    @Spy
+    private FreeShippingPolicy freeShippingPolicy = new FreeShippingPolicy(new BigDecimal("199.00"), Set.of("PAC", "SEDEX"));
 
     @InjectMocks
     private OrderService orderService;
@@ -835,5 +841,62 @@ class OrderServiceTest {
         OrderOutput output = orderService.findByUserIdAndOrderId(userId, order.getId());
 
         assertThat(output.canPay()).isFalse();
+    }
+
+    // ---------- frete grátis a partir de R$ 199 ----------
+
+    @Test
+    void freteGratis_produtosAcimaDe199_freteZeroETotalIgualAoSubtotal() {
+        UUID addressId = UUID.randomUUID();
+        UUID userId = stubCheckoutWithCoupon(addressId, "105.00", 2, "25.50");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderOutput output = orderService.create(userId, new CreateOrderInput(addressId, "PAC"));
+
+        assertThat(output.shippingPrice()).isEqualByComparingTo("0");
+        assertThat(output.total()).isEqualByComparingTo("210.00");
+    }
+
+    @Test
+    void freteGratis_exatamente199_ganhaFreteGratis() {
+        UUID addressId = UUID.randomUUID();
+        UUID userId = stubCheckoutWithCoupon(addressId, "199.00", 1, "25.50");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderOutput output = orderService.create(userId, new CreateOrderInput(addressId, "PAC"));
+
+        assertThat(output.shippingPrice()).isEqualByComparingTo("0");
+        assertThat(output.total()).isEqualByComparingTo("199.00");
+    }
+
+    @Test
+    void freteGratis_cupomDerrubaAbaixoDe199_cobraFrete() {
+        UUID addressId = UUID.randomUUID();
+        UUID userId = stubCheckoutWithCoupon(addressId, "105.00", 2, "25.50");
+
+        Coupon coupon = new Coupon();
+        coupon.setCode("DEZ");
+        coupon.setDiscountPercent(new BigDecimal("10.00"));
+        when(couponService.resolveActiveCoupon("DEZ")).thenReturn(coupon);
+        when(couponService.calculateDiscount(any(), any())).thenCallRealMethod();
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderOutput output = orderService.create(userId, new CreateOrderInput(addressId, "PAC", "DEZ"));
+
+        // 210,00 - 21,00 = 189,00 em produtos: abaixo de 199, frete cobrado
+        assertThat(output.shippingPrice()).isEqualByComparingTo("25.50");
+        assertThat(output.total()).isEqualByComparingTo("214.50");
+    }
+
+    @Test
+    void freteGratis_abaixoDe199_mantemFreteNormal() {
+        UUID addressId = UUID.randomUUID();
+        UUID userId = stubCheckoutWithCoupon(addressId, "75.00", 2, "25.50");
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderOutput output = orderService.create(userId, new CreateOrderInput(addressId, "PAC"));
+
+        assertThat(output.shippingPrice()).isEqualByComparingTo("25.50");
+        assertThat(output.total()).isEqualByComparingTo("175.50");
     }
 }

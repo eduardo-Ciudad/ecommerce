@@ -1,8 +1,10 @@
 package com.eduardo.ecomerce.service;
 
+import com.eduardo.ecomerce.dto.output.shipping.FreeShippingOutput;
 import com.eduardo.ecomerce.dto.output.shipping.ShippingOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.shipping.CorreiosClient;
+import com.eduardo.ecomerce.infra.shipping.FreeShippingPolicy;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +20,7 @@ import java.util.List;
 public class ShippingService {
 
     private final CorreiosClient correiosClient;
+    private final FreeShippingPolicy freeShippingPolicy;
 
     @Value("${correios.cep-origem}")
     private String cepOrigem;
@@ -31,12 +34,24 @@ public class ShippingService {
     private static final String CODIGO_SEDEX = "03220";
 
     public List<ShippingOutput> calculate(String cepDestino) {
+        return calculate(cepDestino, null);
+    }
+
+    /**
+     * Cotação para exibição no carrinho/checkout. productsTotal (produtos já com cupom) só decide
+     * se a modalidade aparece como grátis; o valor cobrado é recalculado na criação do pedido.
+     */
+    public List<ShippingOutput> calculate(String cepDestino, BigDecimal productsTotal) {
         String cepLimpo = cepDestino.replace("-", "");
 
-        ShippingOutput pac = calcularModalidade(CODIGO_PAC, "PAC", cepLimpo);
-        ShippingOutput sedex = calcularModalidade(CODIGO_SEDEX, "SEDEX", cepLimpo);
+        ShippingOutput pac = freeShippingPolicy.apply(calcularModalidade(CODIGO_PAC, "PAC", cepLimpo), productsTotal);
+        ShippingOutput sedex = freeShippingPolicy.apply(calcularModalidade(CODIGO_SEDEX, "SEDEX", cepLimpo), productsTotal);
 
         return List.of(pac, sedex);
+    }
+
+    public FreeShippingOutput freeShippingRule() {
+        return new FreeShippingOutput(freeShippingPolicy.threshold(), freeShippingPolicy.methods());
     }
 
     public ShippingOutput calculateByMethod(String cepDestino, String method) {

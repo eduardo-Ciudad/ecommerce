@@ -72,7 +72,8 @@ class OrderServiceLocalSaleTest {
     void setUp() {
         orderService = new OrderService(orderRepository, cartRepository, cartItemRepository, userRepository,
                 productVariantRepository, addressRepository, shippingService, transactionTemplate,
-                emailService, couponService, eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC));
+                emailService, couponService, eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC),
+                new com.eduardo.ecomerce.infra.shipping.FreeShippingPolicy(new BigDecimal("199.00"), java.util.Set.of("PAC", "SEDEX")));
 
         adminId = UUID.randomUUID();
         User admin = new User();

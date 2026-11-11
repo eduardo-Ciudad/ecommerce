@@ -49,7 +49,8 @@ class OrderServiceExpirationTest {
         service = spy(new OrderService(orderRepository, cartRepository, cartItemRepository, userRepository,
                 productVariantRepository, addressRepository, shippingService, transactionTemplate, emailService,
                 couponService, mock(org.springframework.context.ApplicationEventPublisher.class),
-                java.time.Clock.systemUTC()));
+                java.time.Clock.systemUTC(),
+                new com.eduardo.ecomerce.infra.shipping.FreeShippingPolicy(new java.math.BigDecimal("199.00"), java.util.Set.of("PAC", "SEDEX"))));
         lenient().doAnswer(inv -> ((TransactionCallback<?>) inv.getArgument(0))
                 .doInTransaction(transactionStatus)).when(transactionTemplate).execute(any());
     }
