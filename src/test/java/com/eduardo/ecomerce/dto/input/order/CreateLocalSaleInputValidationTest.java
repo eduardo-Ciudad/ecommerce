@@ -9,6 +9,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -65,5 +66,37 @@ class CreateLocalSaleInputValidationTest {
     @Test
     void celularEmFormatoInvalido_invalido() {
         assertThat(invalidFields(input("Cris vizinha", "9962-71", null))).containsExactly("customerPhone");
+    }
+
+    private static Set<String> invalidFieldsForPrice(String price) {
+        CreateLocalSaleInput input = new CreateLocalSaleInput(
+                List.of(new CreateLocalSaleInput.Item(UUID.randomUUID(), 1, price == null ? null : new BigDecimal(price))),
+                LocalPaymentMethod.CASH, "Cris vizinha", "17996247172", null, null);
+        return invalidFields(input);
+    }
+
+    @Test
+    void precoManualNulo_valido() {
+        assertThat(invalidFieldsForPrice(null)).isEmpty();
+    }
+
+    @Test
+    void precoManualPositivo_valido() {
+        assertThat(invalidFieldsForPrice("39.90")).isEmpty();
+    }
+
+    @Test
+    void precoManualZero_invalido() {
+        assertThat(invalidFieldsForPrice("0.00")).containsExactly("items[0].unitPrice");
+    }
+
+    @Test
+    void precoManualNegativo_invalido() {
+        assertThat(invalidFieldsForPrice("-1.00")).containsExactly("items[0].unitPrice");
+    }
+
+    @Test
+    void precoManualComTresCasas_invalido() {
+        assertThat(invalidFieldsForPrice("39.999")).containsExactly("items[0].unitPrice");
     }
 }

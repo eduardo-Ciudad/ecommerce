@@ -35,6 +35,9 @@ public class OrderItem {
     @Column(name = "unit_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal unitPrice;
 
+    @Column(name = "list_unit_price", precision = 10, scale = 2)
+    private BigDecimal listUnitPrice;
+
     @Column(name = "product_name", length = 150)
     private String productName;
 

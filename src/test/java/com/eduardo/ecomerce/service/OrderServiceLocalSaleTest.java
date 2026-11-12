@@ -257,4 +257,80 @@ class OrderServiceLocalSaleTest {
 
         verifyNoInteractions(emailService);
     }
+
+    @Test
+    void vendaLocal_comPrecoManual_usaPrecoManualNoItemENoTotalSemAlterarOProduto() {
+        orderService.createLocalSale(adminId, new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 2, new BigDecimal("40.00"))),
+                LocalPaymentMethod.CASH, null, PHONE, null, null));
+
+        Order order = savedOrder();
+        OrderItem item = order.getItems().get(0);
+        assertThat(item.getUnitPrice()).isEqualByComparingTo("40.00");
+        assertThat(item.getListUnitPrice()).isEqualByComparingTo("49.90");
+        assertThat(order.getTotal()).isEqualByComparingTo("80.00");
+        assertThat(vestido.getPrice()).isEqualByComparingTo("49.90");
+    }
+
+    @Test
+    void vendaLocal_semPrecoManual_usaPrecoDoProdutoEGuardaPrecoDeTabela() {
+        orderService.createLocalSale(adminId, new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 1, null)),
+                LocalPaymentMethod.CASH, null, PHONE, null, null));
+
+        OrderItem item = savedOrder().getItems().get(0);
+        assertThat(item.getUnitPrice()).isEqualByComparingTo("49.90");
+        assertThat(item.getListUnitPrice()).isEqualByComparingTo("49.90");
+    }
+
+    @Test
+    void vendaLocal_precoManualComDesconto_totalUsaPrecoManualMenosDesconto() {
+        orderService.createLocalSale(adminId, new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 2, new BigDecimal("40.00"))),
+                LocalPaymentMethod.PIX, null, PHONE, null, new BigDecimal("5.00")));
+
+        assertThat(savedOrder().getTotal()).isEqualByComparingTo("75.00");
+    }
+
+    @Test
+    void vendaLocal_descontoMaiorQueSubtotalComPrecoManual_rejeita() {
+        CreateLocalSaleInput input = new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 1, new BigDecimal("20.00"))),
+                LocalPaymentMethod.CASH, null, PHONE, null, new BigDecimal("30.00"));
+
+        assertThatThrownBy(() -> orderService.createLocalSale(adminId, input))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Desconto");
+
+        verify(orderRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void vendaLocal_mesmaVarianteComPrecosDiferentes_rejeitaSemBaixarEstoque() {
+        CreateLocalSaleInput input = new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 1, new BigDecimal("40.00")), new Item(vestido.getId(), 1, null)),
+                LocalPaymentMethod.CASH, null, PHONE, null, null);
+
+        assertThatThrownBy(() -> orderService.createLocalSale(adminId, input))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("preços diferentes");
+
+        assertThat(vestido.getStock()).isEqualTo(5);
+        verify(orderRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void vendaLocal_mesmaVarianteComMesmoPrecoManual_somaQuantidades() {
+        orderService.createLocalSale(adminId, new CreateLocalSaleInput(
+                List.of(new Item(vestido.getId(), 1, new BigDecimal("40.00")),
+                        new Item(vestido.getId(), 2, new BigDecimal("40.0"))),
+                LocalPaymentMethod.CASH, null, PHONE, null, null));
+
+        Order order = savedOrder();
+        assertThat(order.getItems()).hasSize(1);
+        assertThat(order.getItems().get(0).getQuantity()).isEqualTo(3);
+        assertThat(order.getTotal()).isEqualByComparingTo("120.00");
+    }
 }

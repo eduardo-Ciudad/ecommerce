@@ -44,7 +44,14 @@ public record CreateLocalSaleInput(
 
             @NotNull(message = "Informe a quantidade")
             @Min(value = 1, message = "Quantidade deve ser no mínimo 1")
-            Integer quantity
+            Integer quantity,
+
+            @DecimalMin(value = "0.01", message = "Preço deve ser maior que zero")
+            @Digits(integer = 8, fraction = 2, message = "Preço inválido")
+            BigDecimal unitPrice
     ) {
+        public Item(UUID variantId, Integer quantity) {
+            this(variantId, quantity, null);
+        }
     }
 }

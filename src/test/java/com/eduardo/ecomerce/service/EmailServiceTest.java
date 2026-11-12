@@ -45,7 +45,7 @@ class EmailServiceTest {
         ReflectionTestUtils.setField(emailService, "adminEmail", "contato.gabikids@gmail.com");
 
         OrderItemOutput item = new OrderItemOutput(
-                UUID.randomUUID(), UUID.randomUUID(), "Vestido Rosa", "P", null, 2, new BigDecimal("29.90"), null, null);
+                UUID.randomUUID(), UUID.randomUUID(), "Vestido Rosa", "P", null, 2, new BigDecimal("29.90"), null, null, null);
 
         order = new OrderOutput(
                 UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("74.80"),
@@ -85,7 +85,7 @@ class EmailServiceTest {
     @Test
     void shouldIncludeColorInEmailWhenVariantHasColor() {
         OrderItemOutput coloredItem = new OrderItemOutput(
-                UUID.randomUUID(), UUID.randomUUID(), "Short Moletinho", "4", "Rosa Neon", 1, new BigDecimal("34.99"), null, null);
+                UUID.randomUUID(), UUID.randomUUID(), "Short Moletinho", "4", "Rosa Neon", 1, new BigDecimal("34.99"), null, null, null);
         OrderOutput coloredOrder = new OrderOutput(
                 UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("49.99"),
                 OrderStatus.PENDING, null, null,
@@ -110,7 +110,7 @@ class EmailServiceTest {
     void shouldIncludeSkuAndEanInEmailWhenAvailable() {
         OrderItemOutput codedItem = new OrderItemOutput(
                 UUID.randomUUID(), UUID.randomUUID(), "Short Moletinho", "4", "Rosa Neon", 1,
-                new BigDecimal("34.99"), "SM-ROSA-4", "7891234567895");
+                new BigDecimal("34.99"), "SM-ROSA-4", "7891234567895", null);
         OrderOutput codedOrder = new OrderOutput(
                 UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("49.99"),
                 OrderStatus.PENDING, null, null,

@@ -12,6 +12,7 @@ public record OrderItemOutput(
         Integer quantity,
         BigDecimal unitPrice,
         String sku,
-        String gtin
+        String gtin,
+        BigDecimal listUnitPrice
 ) {
 }

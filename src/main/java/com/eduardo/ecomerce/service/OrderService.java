@@ -43,6 +43,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -124,7 +125,7 @@ public class OrderService {
         for (CartItem cartItem : cartItems) {
             ProductVariant variant = cartItem.getVariant();
 
-            order.getItems().add(buildItem(order, variant, cartItem.getQuantity()));
+            order.getItems().add(buildItem(order, variant, cartItem.getQuantity(), variant.getPrice()));
 
             subtotal = subtotal.add(variant.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity())));
 
@@ -168,8 +169,16 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado"));
 
         Map<UUID, Integer> quantities = new LinkedHashMap<>();
+        Map<UUID, BigDecimal> manualPrices = new HashMap<>();
         for (CreateLocalSaleInput.Item item : input.items()) {
+            if (quantities.containsKey(item.variantId())
+                    && !samePrice(manualPrices.get(item.variantId()), item.unitPrice())) {
+                throw new BusinessException("Mesma variante com preços diferentes: " + item.variantId());
+            }
             quantities.merge(item.variantId(), item.quantity(), Integer::sum);
+            if (item.unitPrice() != null) {
+                manualPrices.put(item.variantId(), item.unitPrice());
+            }
         }
 
         Order order = new Order();
@@ -190,8 +199,9 @@ public class OrderService {
                 throw new BusinessException("Estoque insuficiente para a variante: " + variant.getId());
             }
 
-            order.getItems().add(buildItem(order, variant, quantity));
-            subtotal = subtotal.add(variant.getPrice().multiply(BigDecimal.valueOf(quantity)));
+            BigDecimal unitPrice = manualPrices.getOrDefault(variant.getId(), variant.getPrice());
+            order.getItems().add(buildItem(order, variant, quantity, unitPrice));
+            subtotal = subtotal.add(unitPrice.multiply(BigDecimal.valueOf(quantity)));
 
             variant.setStock(variant.getStock() - quantity);
             productVariantRepository.save(variant);
@@ -208,17 +218,25 @@ public class OrderService {
         orderRepository.save(order);
         eventPublisher.publishEvent(new OrderPaidEvent(order.getId()));
 
-        log.info("Venda local registrada — admin: {}, orderId: {}, pagamento: {}, total: {}",
-                adminId, order.getId(), order.getPaymentMethod(), order.getTotal());
+        log.info("Venda local registrada — admin: {}, orderId: {}, pagamento: {}, total: {}, preços manuais: {}",
+                adminId, order.getId(), order.getPaymentMethod(), order.getTotal(), manualPrices);
         return toOutput(order);
     }
 
-    private static OrderItem buildItem(Order order, ProductVariant variant, int quantity) {
+    private static boolean samePrice(BigDecimal a, BigDecimal b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        return a.compareTo(b) == 0;
+    }
+
+    private static OrderItem buildItem(Order order, ProductVariant variant, int quantity, BigDecimal unitPrice) {
         OrderItem orderItem = new OrderItem();
         orderItem.setOrder(order);
         orderItem.setVariant(variant);
         orderItem.setQuantity(quantity);
-        orderItem.setUnitPrice(variant.getPrice());
+        orderItem.setUnitPrice(unitPrice);
+        orderItem.setListUnitPrice(variant.getPrice());
         orderItem.setProductName(variant.getProduct().getName());
         orderItem.setSize(variant.getSize());
         orderItem.setColor(variant.getColor());
@@ -435,7 +453,8 @@ public class OrderService {
                 item.getQuantity(),
                 item.getUnitPrice(),
                 snapshotOr(item.getSku(), variant.getSku()),
-                snapshotOr(item.getGtin(), variant.getGtin())
+                snapshotOr(item.getGtin(), variant.getGtin()),
+                item.getListUnitPrice()
         );
     }
 

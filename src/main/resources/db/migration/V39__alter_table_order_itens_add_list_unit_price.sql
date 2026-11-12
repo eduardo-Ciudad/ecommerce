@@ -1,0 +1,1 @@
+ALTER TABLE order_items ADD COLUMN list_unit_price NUMERIC(10, 2);
