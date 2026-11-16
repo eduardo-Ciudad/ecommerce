@@ -5,6 +5,7 @@ import com.eduardo.ecomerce.domain.category.CategoryRepository;
 import com.eduardo.ecomerce.domain.product.Brand;
 import com.eduardo.ecomerce.domain.product.Product;
 import com.eduardo.ecomerce.domain.product.ProductRepository;
+import com.eduardo.ecomerce.domain.product.SearchTextNormalizer;
 import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
 import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
 import com.eduardo.ecomerce.domain.productvariant.SizeRange;
@@ -59,12 +60,14 @@ public class ProductService {
         Set<UUID> categoryIds = categoryId == null ? null : resolveCategoryIdWithChildren(categoryId);
         List<String> brandValues = brand == null ? null : brand.getSpecificationValues();
         List<String> sizeValues = sizeRange == null ? null : sizeRange.getAcceptedSizes();
-        // q busca pelo nome (contém) ou pelo SKU/GTIN exato de alguma variante (leitor de código de barras)
+        // q: cada palavra (sem acento, singular) precisa aparecer no nome/categoria, ou o termo inteiro é SKU/GTIN exato
         String codeQuery = (nameQuery == null || nameQuery.isBlank()) ? null : nameQuery.trim().toLowerCase();
-        String nameQueryPattern = codeQuery == null ? null : "%" + codeQuery + "%";
+        List<String> namePatterns = codeQuery == null ? null : SearchTextNormalizer.tokens(nameQuery).stream()
+                .map(token -> "%" + token + "%")
+                .toList();
 
         Page<Product> page = productRepository.search(
-                categoryIds, includeWithoutImage, brandValues, sizeValues, nameQueryPattern, codeQuery,
+                categoryIds, includeWithoutImage, brandValues, sizeValues, namePatterns, codeQuery,
                 includeOutOfStock, withStableSort(pageable));
         return PageResponse.from(page.map(this::toOutput));
     }

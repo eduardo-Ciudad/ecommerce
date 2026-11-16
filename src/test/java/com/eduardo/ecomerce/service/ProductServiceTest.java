@@ -223,24 +223,36 @@ class ProductServiceTest {
     @DisplayName("findAllActive com q repassa o padrão de nome e o código exato (SKU/GTIN) normalizados")
     void findAllActiveWithQueryPassesNamePatternAndCodeQuery() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(true), isNull(), isNull(), eq("%sku-1%"), eq("sku-1"), eq(false), any(Pageable.class)))
+        when(productRepository.search(isNull(), eq(true), isNull(), isNull(), eq(List.of("%sku%", "%1%")), eq("sku-1"), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
         productService.findAllActive(pageable, true, false, null, null, null, "  SKU-1 ");
 
-        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), eq("%sku-1%"), eq("sku-1"), eq(false), any(Pageable.class));
+        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), eq(List.of("%sku%", "%1%")), eq("sku-1"), eq(false), any(Pageable.class));
     }
 
     @Test
     @DisplayName("findAllActive com código de barras repassa o GTIN como código exato")
     void findAllActiveWithGtinPassesCodeQuery() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(true), isNull(), isNull(), eq("%7891234567895%"), eq("7891234567895"), eq(false), any(Pageable.class)))
+        when(productRepository.search(isNull(), eq(true), isNull(), isNull(), eq(List.of("%7891234567895%")), eq("7891234567895"), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
         productService.findAllActive(pageable, true, false, null, null, null, "7891234567895");
 
-        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), eq("%7891234567895%"), eq("7891234567895"), eq(false), any(Pageable.class));
+        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), eq(List.of("%7891234567895%")), eq("7891234567895"), eq(false), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("findAllActive com q quebra em palavras normalizadas e mantém o termo inteiro como código")
+    void findAllActiveWithQuerySplitsIntoNormalizedTokens() {
+        when(productRepository.search(any(), anyBoolean(), any(), any(), any(), any(), anyBoolean(), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(PageRequest.of(0, 20), false, false, null, null, null, "Salopete Bebês de Poá");
+
+        verify(productRepository).search(isNull(), eq(false), isNull(), isNull(),
+                eq(List.of("%salopete%", "%bebe%", "%poa%")), eq("salopete bebês de poá"), eq(false), any(Pageable.class));
     }
 
     @Test

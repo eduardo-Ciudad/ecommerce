@@ -42,8 +42,12 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
           SELECT 1 FROM ProductVariant pv
           WHERE pv.product = p AND pv.size IN :sizeValues
       ))
-      AND (:nameQueryPattern IS NULL
-           OR LOWER(p.name) LIKE :nameQueryPattern
+      AND (:codeQuery IS NULL
+           OR ((:t1 IS NULL OR p.searchText LIKE :t1)
+               AND (:t2 IS NULL OR p.searchText LIKE :t2)
+               AND (:t3 IS NULL OR p.searchText LIKE :t3)
+               AND (:t4 IS NULL OR p.searchText LIKE :t4)
+               AND (:t5 IS NULL OR p.searchText LIKE :t5))
            OR EXISTS (
                SELECT 1 FROM ProductVariant pv2
                WHERE pv2.product = p
@@ -54,15 +58,44 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
           WHERE pv3.product = p AND pv3.stock > 0
       ))
     """)
-    Page<Product> search(
+    Page<Product> searchByTokens(
             @Param("categoryIds") Collection<UUID> categoryIds,
             @Param("includeWithoutImage") boolean includeWithoutImage,
             @Param("brandValues") Collection<String> brandValues,
             @Param("sizeValues") Collection<String> sizeValues,
-            @Param("nameQueryPattern") String nameQueryPattern,
+            @Param("t1") String t1,
+            @Param("t2") String t2,
+            @Param("t3") String t3,
+            @Param("t4") String t4,
+            @Param("t5") String t5,
             @Param("codeQuery") String codeQuery,
             @Param("includeOutOfStock") boolean includeOutOfStock,
             Pageable pageable
     );
+
+    /**
+     * namePatterns: até 5 padrões "%palavra%" (já normalizados); cada um precisa bater no search_text.
+     * codeQuery: termo inteiro em minúsculas, para SKU/GTIN exato. Ambos nulos = sem busca por texto.
+     */
+    default Page<Product> search(
+            Collection<UUID> categoryIds,
+            boolean includeWithoutImage,
+            Collection<String> brandValues,
+            Collection<String> sizeValues,
+            List<String> namePatterns,
+            String codeQuery,
+            boolean includeOutOfStock,
+            Pageable pageable
+    ) {
+        List<String> patterns = namePatterns == null ? List.of() : namePatterns;
+        return searchByTokens(categoryIds, includeWithoutImage, brandValues, sizeValues,
+                patternAt(patterns, 0), patternAt(patterns, 1), patternAt(patterns, 2),
+                patternAt(patterns, 3), patternAt(patterns, 4),
+                codeQuery, includeOutOfStock, pageable);
+    }
+
+    private static String patternAt(List<String> patterns, int index) {
+        return index < patterns.size() ? patterns.get(index) : null;
+    }
 
 }

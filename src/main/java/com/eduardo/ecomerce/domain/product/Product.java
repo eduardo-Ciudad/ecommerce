@@ -48,8 +48,23 @@ public class Product {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "search_text", length = 300)
+    private String searchText;
+
     @PrePersist
     private void prePersist() {
         this.createdAt = LocalDateTime.now();
+        refreshSearchText();
+    }
+
+    @PreUpdate
+    private void preUpdate() {
+        refreshSearchText();
+    }
+
+    private void refreshSearchText() {
+        String categoryName = category == null ? "" : category.getName();
+        String text = SearchTextNormalizer.normalize(name + " " + categoryName);
+        this.searchText = text.length() > 300 ? text.substring(0, 300) : text;
     }
 }

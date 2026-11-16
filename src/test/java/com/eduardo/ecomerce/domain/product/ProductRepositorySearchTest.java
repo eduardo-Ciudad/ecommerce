@@ -97,6 +97,61 @@ class ProductRepositorySearchTest {
     }
 
     @Test
+    void semAcento_achaNomeComAcento() {
+        product("Salopete Bebê Milon Rosa Poá", true);
+        flushAndClear();
+
+        assertThat(search("salopete bebe")).extracting(Product::getName).containsExactly("Salopete Bebê Milon Rosa Poá");
+    }
+
+    @Test
+    void palavrasForaDeOrdem_acha() {
+        product("Salopete Bebê Milon Rosa Poá", true);
+        flushAndClear();
+
+        assertThat(search("milon salopete")).extracting(Product::getName).containsExactly("Salopete Bebê Milon Rosa Poá");
+    }
+
+    @Test
+    void plural_achaNomeNoSingular() {
+        product("Vestido Floral", true);
+        flushAndClear();
+
+        assertThat(search("vestidos")).extracting(Product::getName).containsExactly("Vestido Floral");
+    }
+
+    @Test
+    void palavraQueNaoExiste_impedeResultado() {
+        product("Salopete Bebê Milon Rosa Poá", true);
+        flushAndClear();
+
+        assertThat(search("salopete azul")).isEmpty();
+    }
+
+    @Test
+    void palavraPodeVirDaCategoria() {
+        Category bebeMenina = new Category();
+        bebeMenina.setName("Bebê menina");
+        bebeMenina = categoryRepository.saveAndFlush(bebeMenina);
+        product("Body Manga Curta Floral", true, bebeMenina);
+        product("Body Manga Curta Liso", true);
+        flushAndClear();
+
+        assertThat(search("body bebe menina")).extracting(Product::getName).containsExactly("Body Manga Curta Floral");
+    }
+
+    @Test
+    void renomearProduto_atualizaTextoDeBusca() {
+        Product product = product("Short Liso", true);
+        product.setName("Short Moletinho");
+        productRepository.saveAndFlush(product);
+        flushAndClear();
+
+        assertThat(search("moletinho")).extracting(Product::getName).containsExactly("Short Moletinho");
+        assertThat(search("liso")).isEmpty();
+    }
+
+    @Test
     void todasVariantesZeradas_naoApareceNaLoja() {
         Product esgotado = product("Conjunto Esgotado", true);
         variant(esgotado, "ESG-M", null, 0);
@@ -155,7 +210,8 @@ class ProductRepositorySearchTest {
 
     private List<Product> search(String q) {
         String code = q.trim().toLowerCase();
-        return productRepository.search(null, true, null, null, "%" + code + "%", code, true, PageRequest.of(0, 20))
+        List<String> patterns = SearchTextNormalizer.tokens(q).stream().map(t -> "%" + t + "%").toList();
+        return productRepository.search(null, true, null, null, patterns, code, true, PageRequest.of(0, 20))
                 .getContent();
     }
 
@@ -165,9 +221,13 @@ class ProductRepositorySearchTest {
     }
 
     private Product product(String name, boolean active) {
+        return product(name, active, category);
+    }
+
+    private Product product(String name, boolean active, Category productCategory) {
         Product product = new Product();
         product.setName(name);
-        product.setCategory(category);
+        product.setCategory(productCategory);
         product.setActive(active);
         return productRepository.saveAndFlush(product);
     }
