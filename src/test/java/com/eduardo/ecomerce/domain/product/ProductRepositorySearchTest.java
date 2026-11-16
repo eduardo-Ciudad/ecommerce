@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -95,9 +96,71 @@ class ProductRepositorySearchTest {
         assertThat(search("7890000000031")).hasSize(1);
     }
 
+    @Test
+    void todasVariantesZeradas_naoApareceNaLoja() {
+        Product esgotado = product("Conjunto Esgotado", true);
+        variant(esgotado, "ESG-M", null, 0);
+        variant(esgotado, "ESG-G", null, 0);
+        Product disponivel = product("Vestido Disponivel", true);
+        variant(disponivel, "DISP-4", null, 2);
+        flushAndClear();
+
+        assertThat(storeListing(false)).extracting(Product::getName).containsExactly("Vestido Disponivel");
+    }
+
+    @Test
+    void umaVarianteComEstoque_produtoAparece() {
+        Product shorts = product("Short Moletinho", true);
+        variant(shorts, "SHO-2", null, 0);
+        variant(shorts, "SHO-4", null, 1);
+        flushAndClear();
+
+        assertThat(storeListing(false)).extracting(Product::getName).containsExactly("Short Moletinho");
+    }
+
+    @Test
+    void includeOutOfStockTrue_mostraEsgotado() {
+        Product esgotado = product("Conjunto Esgotado", true);
+        variant(esgotado, "ESG-M", null, 0);
+        flushAndClear();
+
+        assertThat(storeListing(true)).extracting(Product::getName).containsExactly("Conjunto Esgotado");
+    }
+
+    @Test
+    void paginacaoComDesempatePorId_naoRepeteNemPulaProduto() {
+        for (int i = 0; i < 25; i++) {
+            Product product = product("Produto " + i, true);
+            variant(product, "PAG-" + i, null, 1);
+        }
+        entityManager.createQuery("UPDATE Product p SET p.createdAt = :mesmoInstante")
+                .setParameter("mesmoInstante", java.time.LocalDateTime.of(2026, 11, 16, 12, 0))
+                .executeUpdate();
+        flushAndClear();
+
+        Sort stable = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("id"));
+        java.util.Set<java.util.UUID> ids = new java.util.HashSet<>();
+        int total = 0;
+        for (int page = 0; page < 3; page++) {
+            List<Product> content = productRepository
+                    .search(null, true, null, null, null, null, false, PageRequest.of(page, 10, stable))
+                    .getContent();
+            total += content.size();
+            content.forEach(p -> ids.add(p.getId()));
+        }
+
+        assertThat(total).isEqualTo(25);
+        assertThat(ids).hasSize(25);
+    }
+
     private List<Product> search(String q) {
         String code = q.trim().toLowerCase();
-        return productRepository.search(null, true, null, null, "%" + code + "%", code, PageRequest.of(0, 20))
+        return productRepository.search(null, true, null, null, "%" + code + "%", code, true, PageRequest.of(0, 20))
+                .getContent();
+    }
+
+    private List<Product> storeListing(boolean includeOutOfStock) {
+        return productRepository.search(null, true, null, null, null, null, includeOutOfStock, PageRequest.of(0, 20))
                 .getContent();
     }
 
@@ -110,12 +173,16 @@ class ProductRepositorySearchTest {
     }
 
     private void variant(Product product, String sku, String gtin) {
+        variant(product, sku, gtin, 1);
+    }
+
+    private void variant(Product product, String sku, String gtin, int stock) {
         ProductVariant variant = new ProductVariant();
         variant.setProduct(product);
         variant.setSku(sku);
         variant.setGtin(gtin);
         variant.setPrice(new BigDecimal("49.90"));
-        variant.setStock(1);
+        variant.setStock(stock);
         entityManager.persist(variant);
     }
 

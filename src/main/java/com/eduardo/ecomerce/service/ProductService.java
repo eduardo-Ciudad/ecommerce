@@ -19,7 +19,9 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -53,7 +55,7 @@ public class ProductService {
         return toOutput(product);
     }
 
-    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, UUID categoryId, Brand brand, SizeRange sizeRange, String nameQuery) {
+    public PageResponse<ProductOutput> findAllActive(Pageable pageable, boolean includeWithoutImage, boolean includeOutOfStock, UUID categoryId, Brand brand, SizeRange sizeRange, String nameQuery) {
         Set<UUID> categoryIds = categoryId == null ? null : resolveCategoryIdWithChildren(categoryId);
         List<String> brandValues = brand == null ? null : brand.getSpecificationValues();
         List<String> sizeValues = sizeRange == null ? null : sizeRange.getAcceptedSizes();
@@ -62,8 +64,18 @@ public class ProductService {
         String nameQueryPattern = codeQuery == null ? null : "%" + codeQuery + "%";
 
         Page<Product> page = productRepository.search(
-                categoryIds, includeWithoutImage, brandValues, sizeValues, nameQueryPattern, codeQuery, pageable);
+                categoryIds, includeWithoutImage, brandValues, sizeValues, nameQueryPattern, codeQuery,
+                includeOutOfStock, withStableSort(pageable));
         return PageResponse.from(page.map(this::toOutput));
+    }
+
+    // sem desempate único o Postgres devolve ordem diferente a cada página (DISTINCT + LIMIT/OFFSET),
+    // repetindo uns produtos e escondendo outros no "carregar mais"
+    private Pageable withStableSort(Pageable pageable) {
+        Sort base = pageable.getSort().isSorted()
+                ? pageable.getSort()
+                : Sort.by(Sort.Order.desc("createdAt"));
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), base.and(Sort.by(Sort.Order.asc("id"))));
     }
 
     public ProductOutput findByBlingProductId(Long blingProductId) {

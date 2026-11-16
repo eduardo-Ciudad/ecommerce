@@ -49,6 +49,10 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                WHERE pv2.product = p
                  AND (LOWER(pv2.sku) = :codeQuery OR pv2.gtin = :codeQuery)
            ))
+      AND (:includeOutOfStock = true OR EXISTS (
+          SELECT 1 FROM ProductVariant pv3
+          WHERE pv3.product = p AND pv3.stock > 0
+      ))
     """)
     Page<Product> search(
             @Param("categoryIds") Collection<UUID> categoryIds,
@@ -57,6 +61,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             @Param("sizeValues") Collection<String> sizeValues,
             @Param("nameQueryPattern") String nameQueryPattern,
             @Param("codeQuery") String codeQuery,
+            @Param("includeOutOfStock") boolean includeOutOfStock,
             Pageable pageable
     );
 

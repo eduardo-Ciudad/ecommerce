@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.LocalDateTime;
@@ -35,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -157,12 +159,12 @@ class ProductServiceTest {
     @DisplayName("findAllActive sem filtros deve chamar search com categoryIds, marca, tamanho e nome nulos")
     void findAllActiveWithoutFiltersCallsSearchWithNullFilters() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(pageable)))
+        when(productRepository.search(isNull(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, false, null, null, null, null);
+        productService.findAllActive(pageable, false, false, null, null, null, null);
 
-        verify(productRepository).search(isNull(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(pageable));
+        verify(productRepository).search(isNull(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class));
     }
 
     @Test
@@ -171,13 +173,13 @@ class ProductServiceTest {
         UUID categoryId = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         when(categoryRepository.findByParentId(categoryId)).thenReturn(List.of());
-        when(productRepository.search(any(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(pageable)))
+        when(productRepository.search(any(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, false, categoryId, null, null, null);
+        productService.findAllActive(pageable, false, false, categoryId, null, null, null);
 
         ArgumentCaptor<Collection<UUID>> captor = ArgumentCaptor.forClass(Collection.class);
-        verify(productRepository).search(captor.capture(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(pageable));
+        verify(productRepository).search(captor.capture(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class));
         assertThat(captor.getValue()).containsExactly(categoryId);
     }
 
@@ -185,60 +187,100 @@ class ProductServiceTest {
     @DisplayName("findAllActive com marca deve repassar as grafias aceitas daquela marca para search")
     void findAllActiveWithBrandPassesSpecificationValuesToSearch() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), isNull(), isNull(), isNull(), eq(pageable)))
+        when(productRepository.search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, false, null, Brand.FAKINI, null, null);
+        productService.findAllActive(pageable, false, false, null, Brand.FAKINI, null, null);
 
-        verify(productRepository).search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), isNull(), isNull(), isNull(), eq(pageable));
+        verify(productRepository).search(isNull(), eq(false), eq(Brand.FAKINI.getSpecificationValues()), isNull(), isNull(), isNull(), eq(false), any(Pageable.class));
     }
 
     @Test
     @DisplayName("findAllActive com faixa de tamanho deve repassar os tamanhos aceitos para search")
     void findAllActiveWithSizeRangePassesAcceptedSizesToSearch() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(false), isNull(), eq(SizeRange.QUATRO_DEZ_ANOS.getAcceptedSizes()), isNull(), isNull(), eq(pageable)))
+        when(productRepository.search(isNull(), eq(false), isNull(), eq(SizeRange.QUATRO_DEZ_ANOS.getAcceptedSizes()), isNull(), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, false, null, null, SizeRange.QUATRO_DEZ_ANOS, null);
+        productService.findAllActive(pageable, false, false, null, null, SizeRange.QUATRO_DEZ_ANOS, null);
 
-        verify(productRepository).search(isNull(), eq(false), isNull(), eq(SizeRange.QUATRO_DEZ_ANOS.getAcceptedSizes()), isNull(), isNull(), eq(pageable));
+        verify(productRepository).search(isNull(), eq(false), isNull(), eq(SizeRange.QUATRO_DEZ_ANOS.getAcceptedSizes()), isNull(), isNull(), eq(false), any(Pageable.class));
     }
 
     @Test
     @DisplayName("findAllActive com nome em branco deve repassar null para search, não string vazia")
     void findAllActiveWithBlankNameQueryPassesNullToSearch() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(pageable)))
+        when(productRepository.search(isNull(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, false, null, null, null, "   ");
+        productService.findAllActive(pageable, false, false, null, null, null, "   ");
 
-        verify(productRepository).search(isNull(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(pageable));
+        verify(productRepository).search(isNull(), eq(false), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class));
     }
 
     @Test
     @DisplayName("findAllActive com q repassa o padrão de nome e o código exato (SKU/GTIN) normalizados")
     void findAllActiveWithQueryPassesNamePatternAndCodeQuery() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(true), isNull(), isNull(), eq("%sku-1%"), eq("sku-1"), eq(pageable)))
+        when(productRepository.search(isNull(), eq(true), isNull(), isNull(), eq("%sku-1%"), eq("sku-1"), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, true, null, null, null, "  SKU-1 ");
+        productService.findAllActive(pageable, true, false, null, null, null, "  SKU-1 ");
 
-        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), eq("%sku-1%"), eq("sku-1"), eq(pageable));
+        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), eq("%sku-1%"), eq("sku-1"), eq(false), any(Pageable.class));
     }
 
     @Test
     @DisplayName("findAllActive com código de barras repassa o GTIN como código exato")
     void findAllActiveWithGtinPassesCodeQuery() {
         Pageable pageable = PageRequest.of(0, 20);
-        when(productRepository.search(isNull(), eq(true), isNull(), isNull(), eq("%7891234567895%"), eq("7891234567895"), eq(pageable)))
+        when(productRepository.search(isNull(), eq(true), isNull(), isNull(), eq("%7891234567895%"), eq("7891234567895"), eq(false), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
-        productService.findAllActive(pageable, true, null, null, null, "7891234567895");
+        productService.findAllActive(pageable, true, false, null, null, null, "7891234567895");
 
-        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), eq("%7891234567895%"), eq("7891234567895"), eq(pageable));
+        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), eq("%7891234567895%"), eq("7891234567895"), eq(false), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("findAllActive sem ordenação aplica createdAt DESC e desempate por id ASC")
+    void findAllActiveWithoutSortAppliesCreatedAtDescAndIdAsc() {
+        when(productRepository.search(any(), anyBoolean(), any(), any(), any(), any(), anyBoolean(), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(PageRequest.of(2, 20), false, false, null, null, null, null);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(productRepository).search(any(), anyBoolean(), any(), any(), any(), any(), anyBoolean(), captor.capture());
+        Pageable used = captor.getValue();
+        assertThat(used.getPageNumber()).isEqualTo(2);
+        assertThat(used.getPageSize()).isEqualTo(20);
+        assertThat(used.getSort()).containsExactly(Sort.Order.desc("createdAt"), Sort.Order.asc("id"));
+    }
+
+    @Test
+    @DisplayName("findAllActive com ordenação do cliente mantém a dele e acrescenta id ASC no fim")
+    void findAllActiveWithClientSortKeepsItAndAppendsId() {
+        when(productRepository.search(any(), anyBoolean(), any(), any(), any(), any(), anyBoolean(), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(PageRequest.of(0, 20, Sort.by(Sort.Order.asc("name"))), false, false, null, null, null, null);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(productRepository).search(any(), anyBoolean(), any(), any(), any(), any(), anyBoolean(), captor.capture());
+        assertThat(captor.getValue().getSort()).containsExactly(Sort.Order.asc("name"), Sort.Order.asc("id"));
+    }
+
+    @Test
+    @DisplayName("findAllActive repassa includeOutOfStock para search (admin enxerga esgotados)")
+    void findAllActivePassesIncludeOutOfStockToSearch() {
+        when(productRepository.search(any(), anyBoolean(), any(), any(), any(), any(), anyBoolean(), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        productService.findAllActive(PageRequest.of(0, 20), true, true, null, null, null, null);
+
+        verify(productRepository).search(isNull(), eq(true), isNull(), isNull(), isNull(), isNull(), eq(true), any(Pageable.class));
     }
 
     @Test

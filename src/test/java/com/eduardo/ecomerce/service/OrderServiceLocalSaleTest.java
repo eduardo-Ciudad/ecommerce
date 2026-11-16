@@ -46,7 +46,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class OrderServiceLocalSaleTest {
+class mmOrderServiceLocalSaleTest {
 
     private static final String PHONE = "(17) 99624-7172";
 

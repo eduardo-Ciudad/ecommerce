@@ -61,11 +61,12 @@ public class ProductController {
     public ResponseEntity<PageResponse<ProductOutput>> findAll(
             @PageableDefault(size = 20) Pageable pageable,
             @RequestParam(name = "includeWithoutImage", defaultValue = "false") boolean includeWithoutImage,
+            @RequestParam(name = "includeOutOfStock", defaultValue = "false") boolean includeOutOfStock,
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) String brand,
             @RequestParam(required = false) String sizeRange,
             @RequestParam(required = false) String q) {
-        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage, categoryId, Brand.fromParam(brand), SizeRange.fromParam(sizeRange), q));
+        return ResponseEntity.ok(productService.findAllActive(pageable, includeWithoutImage, includeOutOfStock, categoryId, Brand.fromParam(brand), SizeRange.fromParam(sizeRange), q));
     }
 
     @GetMapping("/{id}")
