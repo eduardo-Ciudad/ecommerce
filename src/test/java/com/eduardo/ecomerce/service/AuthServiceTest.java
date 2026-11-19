@@ -9,6 +9,7 @@ import com.eduardo.ecomerce.domain.user.UserRole;
 import com.eduardo.ecomerce.dto.input.login.LoginInput;
 import com.eduardo.ecomerce.dto.input.password.ChangePasswordInput;
 import com.eduardo.ecomerce.dto.input.password.ForgetPasswordInput;
+import com.eduardo.ecomerce.dto.input.password.ResendVerificationInput;
 import com.eduardo.ecomerce.dto.input.password.ResetPasswordInput;
 import com.eduardo.ecomerce.dto.input.register.RegisterInput;
 import com.eduardo.ecomerce.dto.input.token.RefreshTokenInput;
@@ -429,6 +430,101 @@ class AuthServiceTest {
         authService.forgotPassword(input);
 
         verifyNoInteractions(emailService, passwordTokenRepository);
+    }
+
+    // -------------------------------------------------------------------------
+    // resendVerification
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("resendVerification — deve invalidar tokens antigos, gerar novo token e enviar email")
+    void resendVerification_success() {
+        user.setEmailVerified(false);
+        when(userRepository.findByEmail("eduardo@email.com")).thenReturn(Optional.of(user));
+        when(passwordTokenRepository.findTopByUserAndTypeOrderByCreatedAtDesc(user, PasswordTokenType.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(tokenCreatedAt(LocalDateTime.now().minusMinutes(5))));
+
+        authService.resendVerification(new ResendVerificationInput("eduardo@email.com"));
+
+        var inOrder = inOrder(passwordTokenRepository, emailService);
+        inOrder.verify(passwordTokenRepository).markUnusedAsUsed(user, PasswordTokenType.EMAIL_VERIFICATION);
+        ArgumentCaptor<PasswordToken> captor = ArgumentCaptor.forClass(PasswordToken.class);
+        inOrder.verify(passwordTokenRepository).save(captor.capture());
+        inOrder.verify(emailService).sendVerificationEmail("eduardo@email.com", captor.getValue().getToken());
+        assertThat(captor.getValue().getType()).isEqualTo(PasswordTokenType.EMAIL_VERIFICATION);
+        assertThat(captor.getValue().getUser()).isSameAs(user);
+        assertThat(captor.getValue().getExpiresAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("resendVerification — deve normalizar o email antes de buscar o usuário")
+    void resendVerification_normalizesEmail() {
+        user.setEmailVerified(false);
+        when(userRepository.findByEmail("eduardo@email.com")).thenReturn(Optional.of(user));
+        when(passwordTokenRepository.findTopByUserAndTypeOrderByCreatedAtDesc(user, PasswordTokenType.EMAIL_VERIFICATION))
+                .thenReturn(Optional.empty());
+
+        authService.resendVerification(new ResendVerificationInput("  EDUARDO@Email.com "));
+
+        verify(emailService).sendVerificationEmail(eq("eduardo@email.com"), any());
+    }
+
+    @Test
+    @DisplayName("resendVerification — não deve gerar token nem enviar email quando o email já está verificado")
+    void resendVerification_alreadyVerified() {
+        user.setEmailVerified(true);
+        when(userRepository.findByEmail("eduardo@email.com")).thenReturn(Optional.of(user));
+
+        authService.resendVerification(new ResendVerificationInput("eduardo@email.com"));
+
+        verifyNoInteractions(emailService, passwordTokenRepository);
+    }
+
+    @Test
+    @DisplayName("resendVerification — não deve lançar exceção nem enviar email quando usuário não existe (evita enumeração)")
+    void resendVerification_userNotFound() {
+        when(userRepository.findByEmail("inexistente@email.com")).thenReturn(Optional.empty());
+
+        authService.resendVerification(new ResendVerificationInput("inexistente@email.com"));
+
+        verifyNoInteractions(emailService, passwordTokenRepository);
+    }
+
+    @Test
+    @DisplayName("resendVerification — não deve reenviar quando o último token foi criado dentro do cooldown")
+    void resendVerification_withinCooldown() {
+        user.setEmailVerified(false);
+        when(userRepository.findByEmail("eduardo@email.com")).thenReturn(Optional.of(user));
+        when(passwordTokenRepository.findTopByUserAndTypeOrderByCreatedAtDesc(user, PasswordTokenType.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(tokenCreatedAt(LocalDateTime.now().minusSeconds(10))));
+
+        authService.resendVerification(new ResendVerificationInput("eduardo@email.com"));
+
+        verify(passwordTokenRepository, never()).markUnusedAsUsed(any(), any());
+        verify(passwordTokenRepository, never()).save(any());
+        verifyNoInteractions(emailService);
+    }
+
+    @Test
+    @DisplayName("resendVerification — deve reenviar quando o último token é anterior ao cooldown")
+    void resendVerification_afterCooldown() {
+        user.setEmailVerified(false);
+        when(userRepository.findByEmail("eduardo@email.com")).thenReturn(Optional.of(user));
+        when(passwordTokenRepository.findTopByUserAndTypeOrderByCreatedAtDesc(user, PasswordTokenType.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(tokenCreatedAt(
+                        LocalDateTime.now().minusSeconds(AuthService.RESEND_VERIFICATION_COOLDOWN_SECONDS + 1))));
+
+        authService.resendVerification(new ResendVerificationInput("eduardo@email.com"));
+
+        verify(passwordTokenRepository).save(any(PasswordToken.class));
+        verify(emailService).sendVerificationEmail(eq("eduardo@email.com"), any());
+    }
+
+    private PasswordToken tokenCreatedAt(LocalDateTime createdAt) {
+        PasswordToken token = new PasswordToken(user, "antigo", PasswordTokenType.EMAIL_VERIFICATION,
+                createdAt.plusHours(1));
+        token.setCreatedAt(createdAt);
+        return token;
     }
 
     // -------------------------------------------------------------------------
