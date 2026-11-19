@@ -10,6 +10,7 @@ import com.eduardo.ecomerce.domain.user.UserRole;
 import com.eduardo.ecomerce.dto.input.login.LoginInput;
 import com.eduardo.ecomerce.dto.input.password.ChangePasswordInput;
 import com.eduardo.ecomerce.dto.input.password.ForgetPasswordInput;
+import com.eduardo.ecomerce.dto.input.password.ResendVerificationInput;
 import com.eduardo.ecomerce.dto.input.password.ResetPasswordInput;
 import com.eduardo.ecomerce.dto.input.register.RegisterInput;
 import com.eduardo.ecomerce.dto.input.token.RefreshTokenInput;
@@ -25,6 +26,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -40,6 +42,8 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
     private final PasswordTokenRepository passwordTokenRepository;
+
+    static final long RESEND_VERIFICATION_COOLDOWN_SECONDS = 60;
 
     @Value("${app.password-token.expiration-hours:1}")
     private long tokenExpirationHours;
@@ -183,6 +187,36 @@ public class AuthService {
         passwordToken.setUsed(true);
         passwordTokenRepository.save(passwordToken);
         log.info("Senha alterada com sucesso para usuário {}", user.getEmail());
+    }
+
+    @Transactional
+    public void resendVerification(ResendVerificationInput input) {
+        String normalizedEmail = input.email().trim().toLowerCase();
+        userRepository.findByEmail(normalizedEmail)
+                .filter(user -> !Boolean.TRUE.equals(user.getEmailVerified()))
+                .filter(this::isOutsideResendCooldown)
+                .ifPresent(user -> {
+                    passwordTokenRepository.markUnusedAsUsed(user, PasswordTokenType.EMAIL_VERIFICATION);
+
+                    String token = UUID.randomUUID().toString().replace("-", "");
+                    passwordTokenRepository.save(new PasswordToken(
+                            user,
+                            token,
+                            PasswordTokenType.EMAIL_VERIFICATION,
+                            LocalDateTime.now().plusHours(tokenExpirationHours)
+                    ));
+
+                    emailService.sendVerificationEmail(user.getEmail(), token);
+                    log.info("Email de verificação reenviado para {}", user.getEmail());
+                });
+    }
+
+    private boolean isOutsideResendCooldown(User user) {
+        return passwordTokenRepository
+                .findTopByUserAndTypeOrderByCreatedAtDesc(user, PasswordTokenType.EMAIL_VERIFICATION)
+                .map(last -> last.getCreatedAt()
+                        .isBefore(LocalDateTime.now().minusSeconds(RESEND_VERIFICATION_COOLDOWN_SECONDS)))
+                .orElse(true);
     }
 
     public void forgotPassword(ForgetPasswordInput input) {
