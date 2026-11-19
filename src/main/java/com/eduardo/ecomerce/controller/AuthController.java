@@ -4,6 +4,7 @@ package com.eduardo.ecomerce.controller;
 import com.eduardo.ecomerce.dto.input.login.LoginInput;
 import com.eduardo.ecomerce.dto.input.password.ChangePasswordInput;
 import com.eduardo.ecomerce.dto.input.password.ForgetPasswordInput;
+import com.eduardo.ecomerce.dto.input.password.ResendVerificationInput;
 import com.eduardo.ecomerce.dto.input.password.ResetPasswordInput;
 import com.eduardo.ecomerce.dto.input.register.RegisterInput;
 import com.eduardo.ecomerce.dto.input.token.RefreshTokenInput;
@@ -88,6 +89,13 @@ public class AuthController {
     public ResponseEntity<MessageOutput> forgotPassword(@RequestBody @Valid ForgetPasswordInput input) {
         authService.forgotPassword(input);
         return ResponseEntity.ok(new MessageOutput("Se o email estiver cadastrado, você receberá um link de recuperação."));
+    }
+
+    @PostMapping("/resend-verification")
+    @Operation(summary = "Reenviar verificação de email", description = "Reenvia o link de verificação para o email informado, se cadastrado e ainda não verificado")
+    public ResponseEntity<MessageOutput> resendVerification(@RequestBody @Valid ResendVerificationInput input) {
+        authService.resendVerification(input);
+        return ResponseEntity.ok(new MessageOutput("Se o email estiver cadastrado e não verificado, enviaremos um novo link."));
     }
 
     @PostMapping("/reset-password")
