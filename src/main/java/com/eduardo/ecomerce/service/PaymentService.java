@@ -4,11 +4,11 @@ import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderPaidEvent;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
-import com.eduardo.ecomerce.domain.orderitem.OrderItem;
 import com.eduardo.ecomerce.dto.input.payment.PaymentInput;
 import com.eduardo.ecomerce.dto.output.payment.PaymentOutput;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.validation.DocumentNumbers;
+import com.eduardo.ecomerce.service.payment.MercadoPagoItemsBuilder;
 import com.mercadopago.client.payment.PaymentClient;
 import com.mercadopago.client.payment.PaymentCreateRequest;
 import com.mercadopago.client.payment.PaymentPayerRequest;
@@ -32,8 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import com.eduardo.ecomerce.domain.product.Product;
-import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.mercadopago.client.common.IdentificationRequest;
 import com.mercadopago.client.payment.PaymentAdditionalInfoPayerRequest;
 import com.mercadopago.client.payment.PaymentAdditionalInfoRequest;
@@ -41,7 +39,6 @@ import com.mercadopago.client.payment.PaymentItemRequest;
 import com.mercadopago.client.payment.PaymentReceiverAddressRequest;
 import com.mercadopago.client.payment.PaymentShipmentsRequest;
 import com.mercadopago.core.MPRequestOptions;
-import org.jsoup.Jsoup;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -58,11 +55,11 @@ public class PaymentService {
     private final PaymentClient paymentClient;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final MercadoPagoItemsBuilder itemsBuilder;
 
     @Value("${mercadopago.notification-url}")
     private String notificationUrl;
     private static final String STATEMENT_DESCRIPTOR = "GABIKIDS";
-    private static final String MP_ITEM_CATEGORY = "fashion";
     private static final ZoneId STORE_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private static final Set<String> CANCELLABLE_PAYMENT_STATUSES = Set.of("pending", "in_process", "authorized");
@@ -235,8 +232,7 @@ public class PaymentService {
     }
 
     private PaymentAdditionalInfoRequest buildAdditionalInfo(Order order) {
-        List<PaymentItemRequest> items = order.getItems() == null ? List.of()
-                : order.getItems().stream().map(this::toPaymentItem).toList();
+        List<PaymentItemRequest> items = itemsBuilder.build(order);
 
         String[] buyerNames = splitName(order.getUser() != null ? order.getUser().getName() : null);
         OffsetDateTime registrationDate = order.getUser() != null && order.getUser().getCreatedAt() != null
@@ -263,50 +259,6 @@ public class PaymentService {
                         .receiverAddress(receiverAddress)
                         .build())
                 .build();
-    }
-
-    private PaymentItemRequest toPaymentItem(OrderItem item) {
-        ProductVariant variant = item.getVariant();
-        Product product = variant.getProduct();
-
-        String id = variant.getSku() != null && !variant.getSku().isBlank()
-                ? variant.getSku()
-                : variant.getId().toString();
-
-        return PaymentItemRequest.builder()
-                .id(id)
-                .title(buildItemTitle(product, variant))
-                .description(buildItemDescription(product, variant))   // novo
-                .pictureUrl(blankToNull(product.getImageUrl()))
-                .categoryId(MP_ITEM_CATEGORY)
-                .quantity(item.getQuantity())
-                .unitPrice(item.getUnitPrice())
-                .build();
-    }
-
-    private static final int MP_ITEM_DESCRIPTION_MAX = 255;
-
-    private String buildItemDescription(Product product, ProductVariant variant) {
-        String text = product.getDescription() == null ? ""
-                : Jsoup.parse(product.getDescription()).text().replaceAll("\\s+", " ").trim();
-
-        if (text.isEmpty()) {
-            text = buildItemTitle(product, variant);
-        }
-        return text.length() > MP_ITEM_DESCRIPTION_MAX
-                ? text.substring(0, MP_ITEM_DESCRIPTION_MAX - 3) + "..."
-                : text;
-    }
-
-    private String buildItemTitle(Product product, ProductVariant variant) {
-        StringBuilder title = new StringBuilder(product.getName());
-        if (variant.getColor() != null && !variant.getColor().isBlank()) {
-            title.append(" - ").append(variant.getColor());
-        }
-        if (variant.getSize() != null && !variant.getSize().isBlank()) {
-            title.append(" - Tam. ").append(variant.getSize());
-        }
-        return title.toString();
     }
 
     private MPRequestOptions buildRequestOptions(PaymentInput input) {

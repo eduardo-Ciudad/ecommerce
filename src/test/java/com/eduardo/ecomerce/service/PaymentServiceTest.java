@@ -5,7 +5,13 @@ import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderPaidEvent;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
+import com.eduardo.ecomerce.domain.orderitem.OrderItem;
+import com.eduardo.ecomerce.domain.product.Product;
+import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.user.User;
+import com.eduardo.ecomerce.service.payment.MercadoPagoItemsBuilder;
+import com.mercadopago.client.payment.PaymentItemRequest;
+import org.mockito.ArgumentCaptor;
 
 import com.eduardo.ecomerce.dto.input.payment.PaymentInput;
 import com.eduardo.ecomerce.dto.output.payment.PaymentOutput;
@@ -74,7 +80,8 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        paymentService = spy(new PaymentService(orderRepository, orderService, paymentClient, eventPublisher, clock));
+        paymentService = spy(new PaymentService(orderRepository, orderService, paymentClient, eventPublisher, clock,
+                new MercadoPagoItemsBuilder()));
         ReflectionTestUtils.setField(paymentService, "notificationUrl", "http://teste.com/payments/webhook");
 
         orderId = UUID.randomUUID();
@@ -109,6 +116,40 @@ class PaymentServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(order.getPaymentId()).isEqualTo("987654321");
         assertThat(order.getPaymentStatus()).isEqualTo("approved");
+    }
+
+    @Test
+    void processPayment_pedidoComFrete_enviaItensQueSomamOTransactionAmount() throws Exception {
+        Product product = new Product();
+        product.setName("Short Moletinho");
+        ProductVariant variant = new ProductVariant();
+        variant.setId(UUID.randomUUID());
+        variant.setSku("SKU-1");
+        variant.setProduct(product);
+        OrderItem item = new OrderItem();
+        item.setVariant(variant);
+        item.setQuantity(1);
+        item.setUnitPrice(new BigDecimal("1.00"));
+        order.getItems().add(item);
+        order.setShippingMethod("PAC");
+        order.setShippingPrice(new BigDecimal("11.63"));
+        order.setTotal(new BigDecimal("12.63"));
+
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null);
+        Payment payment = mockPayment("987654321", "approved", "accredited", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        ArgumentCaptor<PaymentCreateRequest> captor = ArgumentCaptor.forClass(PaymentCreateRequest.class);
+        when(paymentClient.create(captor.capture(), any(MPRequestOptions.class))).thenReturn(payment);
+
+        paymentService.processPayment(input, "cliente@teste.com");
+
+        PaymentCreateRequest request = captor.getValue();
+        List<PaymentItemRequest> items = request.getAdditionalInfo().getItems();
+        BigDecimal itemsTotal = items.stream()
+                .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(itemsTotal).isEqualByComparingTo(request.getTransactionAmount());
+        assertThat(items).anyMatch(i -> MercadoPagoItemsBuilder.SHIPPING_ITEM_ID.equals(i.getId()));
     }
 
     @Test
