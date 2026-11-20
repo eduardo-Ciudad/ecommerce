@@ -37,6 +37,9 @@ public record PaymentInput(
 
         @NotBlank(message = "Celular é obrigatório")
         @Pattern(regexp = "^\\(?\\d{2}\\)?[\\s-]?\\d{4,5}-?\\d{4}$", message = "Celular inválido")
-        String payerPhone
+        String payerPhone,
+
+        @Size(max = 120, message = "Nome do pagador deve ter no máximo 120 caracteres")
+        String payerName
 ) {
 }

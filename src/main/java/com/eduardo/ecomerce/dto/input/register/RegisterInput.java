@@ -3,11 +3,13 @@ package com.eduardo.ecomerce.dto.input.register;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record RegisterInput(
 
         @NotBlank(message = "Nome é obrigatório")
+        @Pattern(regexp = "^\\s*\\S+(\\s+\\S+)+\\s*$", message = "Informe nome e sobrenome")
         String name,
 
         @NotBlank(message = "Email é obrigatório")

@@ -36,7 +36,7 @@ class PaymentInputValidationTest {
     }
 
     private static PaymentInput pixWithPhone(String docType, String docNumber, String phone) {
-        return new PaymentInput(UUID.randomUUID(), "pix", null, null, null, null, docType, docNumber, null, phone);
+        return new PaymentInput(UUID.randomUUID(), "pix", null, null, null, null, docType, docNumber, null, phone, null);
     }
 
     @Test

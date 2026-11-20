@@ -179,14 +179,19 @@ public class PaymentService {
     }
 
     private Payment createNewPayment(Order order, PaymentInput input, String payerEmail) {
+        String[] payerNames = splitName(resolvePayerName(order, input));
+        if ("credit_card".equals(input.paymentMethod()) && payerNames[1] == null) {
+            throw new BusinessException("Informe nome e sobrenome do titular do pagamento.");
+        }
+
         PaymentCreateRequest.PaymentCreateRequestBuilder requestBuilder = PaymentCreateRequest.builder()
                 .transactionAmount(order.getTotal())
                 .description("GabiKids - Pedido #" + order.getId().toString().substring(0, 8))
                 .statementDescriptor(STATEMENT_DESCRIPTOR)
                 .externalReference(order.getId().toString())
                 .notificationUrl(notificationUrl)
-                .payer(buildPayer(order, input, payerEmail))
-                .additionalInfo(buildAdditionalInfo(order));
+                .payer(buildPayer(payerNames, input, payerEmail))
+                .additionalInfo(buildAdditionalInfo(order, payerNames));
 
         if ("credit_card".equals(input.paymentMethod())) {
             if (input.token() == null || input.token().isBlank()) {
@@ -213,9 +218,14 @@ public class PaymentService {
         }
     }
 
-    private PaymentPayerRequest buildPayer(Order order, PaymentInput input, String payerEmail) {
-        String[] names = splitName(order.getUser() != null ? order.getUser().getName() : null);
+    private static String resolvePayerName(Order order, PaymentInput input) {
+        if (input.payerName() != null && !input.payerName().isBlank()) {
+            return input.payerName();
+        }
+        return order.getUser() != null ? order.getUser().getName() : null;
+    }
 
+    private PaymentPayerRequest buildPayer(String[] names, PaymentInput input, String payerEmail) {
         PaymentPayerRequest.PaymentPayerRequestBuilder payer = PaymentPayerRequest.builder()
                 .email(payerEmail)
                 .firstName(names[0])
@@ -231,10 +241,9 @@ public class PaymentService {
         return payer.build();
     }
 
-    private PaymentAdditionalInfoRequest buildAdditionalInfo(Order order) {
+    private PaymentAdditionalInfoRequest buildAdditionalInfo(Order order, String[] buyerNames) {
         List<PaymentItemRequest> items = itemsBuilder.build(order);
 
-        String[] buyerNames = splitName(order.getUser() != null ? order.getUser().getName() : null);
         OffsetDateTime registrationDate = order.getUser() != null && order.getUser().getCreatedAt() != null
                 ? order.getUser().getCreatedAt().atZone(STORE_ZONE).toOffsetDateTime()
                 : null;
