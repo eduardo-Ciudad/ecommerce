@@ -31,6 +31,24 @@ class OrderTest {
     // ---------- hasActivePaymentAttempt ----------
 
     @Test
+    void hasActivePaymentAttempt_linkInfinitePayAberto_true() {
+        Order order = pendingOrder(null, "pending");
+        order.setPaymentProvider(PaymentProvider.INFINITEPAY);
+        order.setCheckoutUrl("https://checkout.infinitepay.io/loja/abc");
+
+        assertThat(order.hasActivePaymentAttempt()).isTrue();
+        assertThat(order.canReceivePayment()).isFalse();
+    }
+
+    @Test
+    void hasActivePaymentAttempt_infinitePaySemLink_false() {
+        Order order = pendingOrder(null, null);
+        order.setPaymentProvider(PaymentProvider.INFINITEPAY);
+
+        assertThat(order.hasActivePaymentAttempt()).isFalse();
+    }
+
+    @Test
     void hasActivePaymentAttempt_semPaymentId_false() {
         assertThat(pendingOrder(null, null).hasActivePaymentAttempt()).isFalse();
     }
