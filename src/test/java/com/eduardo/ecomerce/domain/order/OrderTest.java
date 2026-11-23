@@ -21,6 +21,13 @@ class OrderTest {
         return order;
     }
 
+    // ---------- provedor de pagamento ----------
+
+    @Test
+    void novoPedido_provedorPadraoEhMercadoPago() {
+        assertThat(new Order().getPaymentProvider()).isEqualTo(PaymentProvider.MERCADO_PAGO);
+    }
+
     // ---------- hasActivePaymentAttempt ----------
 
     @Test

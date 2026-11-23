@@ -42,6 +42,16 @@ public class Order {
     @Column(name = "payment_status", length = 50)
     private String paymentStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_provider", nullable = false, length = 20)
+    private PaymentProvider paymentProvider = PaymentProvider.MERCADO_PAGO;
+
+    @Column(name = "payment_transaction_id", length = 100)
+    private String paymentTransactionId;
+
+    @Column(name = "payment_installments")
+    private Integer paymentInstallments;
+
     @Column(name = "checkout_url", length = 500)
     private String checkoutUrl;
 
