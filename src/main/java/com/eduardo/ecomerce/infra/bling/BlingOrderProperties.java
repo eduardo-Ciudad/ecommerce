@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.infra.bling;
 
 import com.eduardo.ecomerce.domain.order.LocalPaymentMethod;
+import com.eduardo.ecomerce.domain.order.PaymentProvider;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -21,7 +22,8 @@ public record BlingOrderProperties(
         Local local
 ) {
 
-    public record PaymentMethods(Long pix, Long creditCard) {
+    /** creditCardInfinitepay: forma "Cartão de Crédito - InfinitePay" no Bling (cartão pago pelo checkout da InfinitePay). */
+    public record PaymentMethods(Long pix, Long creditCard, Long creditCardInfinitepay) {
     }
 
     /**
@@ -33,6 +35,19 @@ public record BlingOrderProperties(
     }
 
     public record LocalPaymentMethods(Long cash, Long localPix, Long cardMachine, Long paymentLink, Long storeCredit) {
+    }
+
+    /** Id da forma de pagamento considerando o gateway: cartão da InfinitePay tem forma própria no Bling. */
+    public Long paymentMethodIdFor(String paymentMethod, PaymentProvider provider) {
+        if (provider == PaymentProvider.INFINITEPAY && "credit_card".equals(paymentMethod)) {
+            Long id = this.paymentMethod == null ? null : this.paymentMethod.creditCardInfinitepay();
+            if (id == null) {
+                throw new IllegalArgumentException(
+                        "Cartão InfinitePay sem forma de pagamento no Bling (bling.orders.payment-method.credit-card-infinitepay)");
+            }
+            return id;
+        }
+        return paymentMethodIdFor(paymentMethod);
     }
 
     /** Id da forma de pagamento no Bling para o meio gravado no pedido (site ou balcão). */
