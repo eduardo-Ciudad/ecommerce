@@ -104,6 +104,23 @@ public class EmailService {
         }
     }
 
+    /** Alerta operacional para o e-mail administrativo (ex.: pagamento confirmado em pedido já expirado). */
+    @Async
+    public void sendAdminAlert(String subject, String text) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(sender);
+            message.setTo(adminEmail);
+            message.setSubject("[Alerta] " + subject + " — GabiKids");
+            message.setText(text);
+
+            mailSender.send(message);
+            log.info("Alerta enviado ao admin: {}", subject);
+        } catch (Exception e) {
+            log.error("Falha ao enviar alerta ao admin: {}", subject, e);
+        }
+    }
+
     @Async
     public void sendNewOrderNotification(OrderOutput order, String customerEmail) {
         try {
