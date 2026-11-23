@@ -103,7 +103,7 @@ class BlingOrderPayloadMapperTest {
     private static BlingOrderProperties properties() {
         return new BlingOrderProperties(
                 true, 206333320L, 15L,
-                new BlingOrderProperties.PaymentMethods(9042991L, 11412042L),
+                new BlingOrderProperties.PaymentMethods(9042991L, 11412042L, 11999999L),
                 5, Duration.ofMinutes(15),
                 new BlingOrderProperties.Local(777L, 9L, new BlingOrderProperties.LocalPaymentMethods(
                         1001L, 1002L, 1003L, 1004L, 1005L)));
@@ -520,5 +520,35 @@ class BlingOrderPayloadMapperTest {
         order.setCustomerPhone(null);
 
         assertThat(mapper.toContact(order).has("celular")).isFalse();
+    }
+
+    // ---------- pedido pago pela InfinitePay ----------
+
+    @Test
+    void infinitePay_parcelaComFormaDaInfinitePayEObservacaoComTransacao() {
+        asInfinitePayCardOrder();
+
+        JsonNode installment = sale().path("parcelas").get(0);
+
+        assertThat(installment.path("formaPagamento").path("id").asLong()).isEqualTo(11999999L);
+        assertThat(installment.path("observacoes").asText()).isEqualTo("InfinitePay trx-1");
+    }
+
+    @Test
+    void infinitePay_observacoesInternasComTransacaoMeioEParcelas() {
+        asInfinitePayCardOrder();
+
+        String notes = sale().path("observacoesInternas").asText();
+
+        assertThat(notes).contains("Pagamento InfinitePay trx-1 (credit_card, 3x)");
+        assertThat(notes).doesNotContain("Mercado Pago");
+    }
+
+    private void asInfinitePayCardOrder() {
+        order.setPaymentProvider(com.eduardo.ecomerce.domain.order.PaymentProvider.INFINITEPAY);
+        order.setPaymentMethod("credit_card");
+        order.setPaymentId("abc");
+        order.setPaymentTransactionId("trx-1");
+        order.setPaymentInstallments(3);
     }
 }
