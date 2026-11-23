@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.service.bling;
 
 import com.eduardo.ecomerce.domain.order.LocalPaymentMethod;
 import com.eduardo.ecomerce.domain.order.Order;
+import com.eduardo.ecomerce.domain.order.PaymentProvider;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.user.User;
@@ -114,10 +115,11 @@ public class BlingOrderPayloadMapper {
         ObjectNode installment = sale.putArray("parcelas").addObject();
         installment.put("dataVencimento", date.format(DATE));
         installment.put("valor", order.getTotal());
-        installment.putObject("formaPagamento").put("id", properties.paymentMethodIdFor(order.getPaymentMethod()));
+        installment.putObject("formaPagamento").put("id",
+                properties.paymentMethodIdFor(order.getPaymentMethod(), order.getPaymentProvider()));
         installment.put("observacoes", order.isLocalSale()
                 ? "Venda loja física · " + localPaymentLabel(order)
-                : "Mercado Pago " + order.getPaymentId());
+                : gatewayReference(order));
 
         sale.put("observacoesInternas", internalNotes(order));
 
@@ -193,12 +195,24 @@ public class BlingOrderPayloadMapper {
         }
         StringBuilder notes = new StringBuilder()
                 .append("Pedido do site GabiKids #").append(order.getId())
-                .append(" · Pagamento Mercado Pago ").append(order.getPaymentId())
-                .append(" (").append(order.getPaymentMethod()).append(")");
+                .append(" · Pagamento ").append(gatewayReference(order))
+                .append(" (").append(order.getPaymentMethod()).append(installmentsSuffix(order)).append(")");
         if (order.getCouponCode() != null && !order.getCouponCode().isBlank()) {
             notes.append(" · Cupom ").append(order.getCouponCode());
         }
         return notes.toString();
+    }
+
+    /** Gateway e identificador do pagamento: transação na InfinitePay, payment id no Mercado Pago. */
+    private static String gatewayReference(Order order) {
+        return order.getPaymentProvider() == PaymentProvider.INFINITEPAY
+                ? "InfinitePay " + order.getPaymentTransactionId()
+                : "Mercado Pago " + order.getPaymentId();
+    }
+
+    private static String installmentsSuffix(Order order) {
+        Integer installments = order.getPaymentInstallments();
+        return installments != null && installments > 1 ? ", " + installments + "x" : "";
     }
 
     private LocalDate storeDate(Order order) {
