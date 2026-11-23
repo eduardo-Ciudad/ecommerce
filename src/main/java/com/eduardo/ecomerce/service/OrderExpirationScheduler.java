@@ -4,6 +4,7 @@ package com.eduardo.ecomerce.service;
 import com.eduardo.ecomerce.domain.order.Order;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
+import com.eduardo.ecomerce.domain.order.PaymentProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -53,6 +54,11 @@ public class OrderExpirationScheduler {
         }
 
         OrderService.ExpiringOrderSnapshot snapshot = snapshotOpt.get();
+
+        if (snapshot.provider() == PaymentProvider.INFINITEPAY) {
+            orderService.expireInfinitePayOrder(orderId);
+            return;
+        }
         String paymentId = snapshot.paymentId();
 
         if (paymentId == null) {

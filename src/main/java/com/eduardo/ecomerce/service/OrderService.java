@@ -12,6 +12,7 @@ import com.eduardo.ecomerce.domain.order.OrderChannel;
 import com.eduardo.ecomerce.domain.order.OrderPaidEvent;
 import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
+import com.eduardo.ecomerce.domain.order.PaymentProvider;
 import com.eduardo.ecomerce.domain.orderitem.OrderItem;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
@@ -68,7 +69,10 @@ public class OrderService {
     private final Clock clock;
     private final FreeShippingPolicy freeShippingPolicy;
 
-    public record ExpiringOrderSnapshot(UUID orderId, String paymentId, BigDecimal total) {}
+    public record ExpiringOrderSnapshot(UUID orderId, String paymentId, BigDecimal total, PaymentProvider provider) {}
+
+    /** Tempo extra após o prazo antes de expirar pedido InfinitePay: dá margem para o webhook de um pagamento de última hora. */
+    public static final long INFINITEPAY_CONFIRMATION_GRACE_MINUTES = 10;
 
     @Transactional
     public OrderOutput create(UUID userId, CreateOrderInput input) {
@@ -307,8 +311,38 @@ public class OrderService {
             }
 
             String activePaymentId = order.hasActivePaymentAttempt() ? order.getPaymentId() : null;
-            return Optional.of(new ExpiringOrderSnapshot(order.getId(), activePaymentId, order.getTotal()));
+            return Optional.of(new ExpiringOrderSnapshot(
+                    order.getId(), activePaymentId, order.getTotal(), order.getPaymentProvider()));
         });
+    }
+
+    /**
+     * Expira pedido pago pela InfinitePay que não recebeu confirmação. Não há o que cancelar lá
+     * (o link expira sozinho pelo valid_until); só cancela o pedido e devolve o estoque após a carência.
+     */
+    public boolean expireInfinitePayOrder(UUID orderId) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+            Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+
+            if (order == null
+                    || order.getStatus() != OrderStatus.PENDING
+                    || order.getPaymentProvider() != PaymentProvider.INFINITEPAY) {
+                log.warn("Pedido {} não é mais um pedido InfinitePay pendente — expiração ignorada", orderId);
+                return false;
+            }
+
+            LocalDateTime graceEnd = order.getPaymentDeadline().plusMinutes(INFINITEPAY_CONFIRMATION_GRACE_MINUTES);
+            if (LocalDateTime.now(clock).isBefore(graceEnd)) {
+                return false;
+            }
+
+            order.setStatus(OrderStatus.CANCELLED);
+            order.setPaymentStatus("cancelled");
+            orderRepository.save(order);
+            restoreStock(order);
+            log.info("Pedido {} InfinitePay expirado sem pagamento confirmado — cancelado e estoque devolvido", orderId);
+            return true;
+        }));
     }
 
     public boolean cancelExpiredOrderWithoutPayment(UUID orderId) {

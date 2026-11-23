@@ -18,6 +18,7 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,13 +44,15 @@ class OrderServiceExpirationTest {
     @Mock
     CouponService couponService;
 
+    final java.time.Clock clock = java.time.Clock.systemUTC();
+
 
     @BeforeEach
     void setUp() {
         service = spy(new OrderService(orderRepository, cartRepository, cartItemRepository, userRepository,
                 productVariantRepository, addressRepository, shippingService, transactionTemplate, emailService,
                 couponService, mock(org.springframework.context.ApplicationEventPublisher.class),
-                java.time.Clock.systemUTC(),
+                clock,
                 new com.eduardo.ecomerce.infra.shipping.FreeShippingPolicy(new java.math.BigDecimal("199.00"), java.util.Set.of("PAC", "SEDEX"))));
         lenient().doAnswer(inv -> ((TransactionCallback<?>) inv.getArgument(0))
                 .doInTransaction(transactionStatus)).when(transactionTemplate).execute(any());
@@ -62,7 +65,8 @@ class OrderServiceExpirationTest {
 
         Optional<OrderService.ExpiringOrderSnapshot> result = service.lockPendingOrderForExpiration(order.getId());
 
-        assertThat(result).contains(new OrderService.ExpiringOrderSnapshot(order.getId(), null, order.getTotal()));
+        assertThat(result).contains(new OrderService.ExpiringOrderSnapshot(
+                order.getId(), null, order.getTotal(), PaymentProvider.MERCADO_PAGO));
         assertUnchanged(order, OrderStatus.PENDING, null);
     }
 
@@ -74,7 +78,7 @@ class OrderServiceExpirationTest {
         Optional<OrderService.ExpiringOrderSnapshot> result = service.lockPendingOrderForExpiration(order.getId());
 
         assertThat(result).contains(new OrderService.ExpiringOrderSnapshot(
-                order.getId(), "payment-1", order.getTotal()));
+                order.getId(), "payment-1", order.getTotal(), PaymentProvider.MERCADO_PAGO));
         assertUnchanged(order, OrderStatus.PENDING, "payment-1");
     }
 
@@ -87,7 +91,8 @@ class OrderServiceExpirationTest {
 
         Optional<OrderService.ExpiringOrderSnapshot> result = service.lockPendingOrderForExpiration(order.getId());
 
-        assertThat(result).contains(new OrderService.ExpiringOrderSnapshot(order.getId(), null, order.getTotal()));
+        assertThat(result).contains(new OrderService.ExpiringOrderSnapshot(
+                order.getId(), null, order.getTotal(), PaymentProvider.MERCADO_PAGO));
         assertUnchanged(order, OrderStatus.PENDING, "payment-1");
     }
 
@@ -227,6 +232,81 @@ class OrderServiceExpirationTest {
         when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
         assertThat(service.finalizeExpiredOrderCancellation(order.getId(), "payment-1")).isFalse();
         assertUnchanged(order, status, paymentId);
+    }
+
+    // ---------- InfinitePay ----------
+
+    @Test
+    void lockPendingOrderForExpiration_pedidoInfinitePay_retornaProvedor() {
+        Order order = infinitePayOrder(LocalDateTime.now(clock).minusMinutes(45));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        Optional<OrderService.ExpiringOrderSnapshot> result = service.lockPendingOrderForExpiration(order.getId());
+
+        assertThat(result).get().extracting(OrderService.ExpiringOrderSnapshot::provider)
+                .isEqualTo(PaymentProvider.INFINITEPAY);
+    }
+
+    @Test
+    void expireInfinitePayOrder_aposCarencia_cancelaEDevolveEstoque() {
+        Order order = infinitePayOrder(LocalDateTime.now(clock).minusMinutes(
+                Order.PAYMENT_WINDOW_MINUTES + OrderService.INFINITEPAY_CONFIRMATION_GRACE_MINUTES + 1));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        boolean result = service.expireInfinitePayOrder(order.getId());
+
+        assertThat(result).isTrue();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getPaymentStatus()).isEqualTo("cancelled");
+        assertThat(order.hasActivePaymentAttempt()).isFalse();
+        assertThat(variant(order).getStock()).isEqualTo(7);
+        verify(orderRepository).save(order);
+        verify(service).restoreStock(order);
+    }
+
+    @Test
+    void expireInfinitePayOrder_dentroDaCarencia_naoAltera() {
+        Order order = infinitePayOrder(LocalDateTime.now(clock).minusMinutes(Order.PAYMENT_WINDOW_MINUTES + 2));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        boolean result = service.expireInfinitePayOrder(order.getId());
+
+        assertThat(result).isFalse();
+        assertThat(order.getPaymentStatus()).isEqualTo("pending");
+        assertUnchanged(order, OrderStatus.PENDING, null);
+    }
+
+    @Test
+    void expireInfinitePayOrder_pedidoJaPago_naoAltera() {
+        Order order = infinitePayOrder(LocalDateTime.now(clock).minusMinutes(60));
+        order.setStatus(OrderStatus.PAID);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        boolean result = service.expireInfinitePayOrder(order.getId());
+
+        assertThat(result).isFalse();
+        assertUnchanged(order, OrderStatus.PAID, null);
+    }
+
+    @Test
+    void expireInfinitePayOrder_pedidoMercadoPago_naoAltera() {
+        Order order = order(OrderStatus.PENDING, null);
+        order.setCreatedAt(LocalDateTime.now(clock).minusMinutes(60));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        boolean result = service.expireInfinitePayOrder(order.getId());
+
+        assertThat(result).isFalse();
+        assertUnchanged(order, OrderStatus.PENDING, null);
+    }
+
+    private Order infinitePayOrder(LocalDateTime createdAt) {
+        Order order = order(OrderStatus.PENDING, null);
+        order.setPaymentProvider(PaymentProvider.INFINITEPAY);
+        order.setCheckoutUrl("https://checkout.infinitepay.io/vanda/abc");
+        order.setPaymentStatus("pending");
+        order.setCreatedAt(createdAt);
+        return order;
     }
 
     private void assertUnchanged(Order order, OrderStatus status, String paymentId) {

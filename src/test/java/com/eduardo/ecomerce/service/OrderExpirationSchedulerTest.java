@@ -68,6 +68,20 @@ class OrderExpirationSchedulerTest {
     }
 
     @Test
+    void processExpiredOrder_infinitePay_expiraSemConsultarMercadoPago() {
+        UUID id = UUID.randomUUID();
+        when(orderService.lockPendingOrderForExpiration(id)).thenReturn(Optional.of(
+                new OrderService.ExpiringOrderSnapshot(id, null, new BigDecimal("100.00"), PaymentProvider.INFINITEPAY)));
+
+        scheduler.processExpiredOrder(id);
+
+        verify(orderService).expireInfinitePayOrder(id);
+        verify(orderService, never()).cancelExpiredOrderWithoutPayment(any());
+        verify(orderService, never()).finalizeExpiredOrderCancellation(any(), any());
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
     void processExpiredOrder_snapshotComPaymentId_cancelaSemFazerLookup() {
         UUID id = UUID.randomUUID();
         when(orderService.lockPendingOrderForExpiration(id)).thenReturn(snapshot(id, "payment-1"));
@@ -161,7 +175,8 @@ class OrderExpirationSchedulerTest {
     }
 
     private Optional<OrderService.ExpiringOrderSnapshot> snapshot(UUID id, String paymentId) {
-        return Optional.of(new OrderService.ExpiringOrderSnapshot(id, paymentId, new BigDecimal("100.00")));
+        return Optional.of(new OrderService.ExpiringOrderSnapshot(
+                id, paymentId, new BigDecimal("100.00"), PaymentProvider.MERCADO_PAGO));
     }
 
     private Order order(UUID id) {
