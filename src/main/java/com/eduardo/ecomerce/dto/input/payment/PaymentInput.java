@@ -41,5 +41,5 @@ public record PaymentInput(
 
         @Size(max = 120, message = "Nome do pagador deve ter no máximo 120 caracteres")
         String payerName
-) {
+) implements PayerDocumentHolder {
 }
