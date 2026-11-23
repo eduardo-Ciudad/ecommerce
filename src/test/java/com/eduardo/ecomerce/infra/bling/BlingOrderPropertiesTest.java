@@ -1,5 +1,6 @@
 package com.eduardo.ecomerce.infra.bling;
 
+import com.eduardo.ecomerce.domain.order.PaymentProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
@@ -121,5 +122,32 @@ class BlingOrderPropertiesTest {
     void paymentMethodIdFor_nulo_lancaExcecao() {
         assertThatThrownBy(() -> full().paymentMethodIdFor(null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // ---------- forma de pagamento por provedor ----------
+
+    @Test
+    void paymentMethodIdFor_cartaoInfinitePay_usaFormaPropria() {
+        BlingOrderProperties props = bind(Map.of(
+                "bling.orders.payment-method.pix", "9042991",
+                "bling.orders.payment-method.credit-card", "11412042",
+                "bling.orders.payment-method.credit-card-infinitepay", "11999999"));
+
+        assertThat(props.paymentMethodIdFor("credit_card", PaymentProvider.INFINITEPAY)).isEqualTo(11999999L);
+        assertThat(props.paymentMethodIdFor("credit_card", PaymentProvider.MERCADO_PAGO)).isEqualTo(11412042L);
+    }
+
+    @Test
+    void paymentMethodIdFor_cartaoInfinitePaySemConfig_lancaComNomeDaPropriedade() {
+        BlingOrderProperties props = full();
+
+        assertThatThrownBy(() -> props.paymentMethodIdFor("credit_card", PaymentProvider.INFINITEPAY))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("credit-card-infinitepay");
+    }
+
+    @Test
+    void paymentMethodIdFor_pixInfinitePay_usaFormaPix() {
+        assertThat(full().paymentMethodIdFor("pix", PaymentProvider.INFINITEPAY)).isEqualTo(9042991L);
     }
 }
