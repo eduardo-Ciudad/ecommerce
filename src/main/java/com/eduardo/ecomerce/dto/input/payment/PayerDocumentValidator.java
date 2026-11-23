@@ -4,10 +4,10 @@ import com.eduardo.ecomerce.infra.validation.DocumentNumbers;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
-public class PayerDocumentValidator implements ConstraintValidator<ValidPayerDocument, PaymentInput> {
+public class PayerDocumentValidator implements ConstraintValidator<ValidPayerDocument, PayerDocumentHolder> {
 
     @Override
-    public boolean isValid(PaymentInput input, ConstraintValidatorContext context) {
+    public boolean isValid(PayerDocumentHolder input, ConstraintValidatorContext context) {
         if (input == null || isBlank(input.payerDocType()) || isBlank(input.payerDocNumber())) {
             // campo ausente é responsabilidade do @NotBlank (evita erro duplicado)
             return true;
