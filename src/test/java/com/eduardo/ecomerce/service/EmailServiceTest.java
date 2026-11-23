@@ -152,4 +152,22 @@ class EmailServiceTest {
         assertDoesNotThrow(() -> emailService.sendNewOrderNotification(order, "maria@example.com"));
     }
 
+    @Test
+    void sendAdminAlert_enviaParaEmailAdministrativo() {
+        emailService.sendAdminAlert("Pagamento em pedido expirado", "Pedido d3aae31d, transação trx-1");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage sent = captor.getValue();
+        assertThat(sent.getTo()[0]).isEqualTo("contato.gabikids@gmail.com");
+        assertThat(sent.getSubject()).isEqualTo("[Alerta] Pagamento em pedido expirado — GabiKids");
+        assertThat(sent.getText()).isEqualTo("Pedido d3aae31d, transação trx-1");
+    }
+
+    @Test
+    void sendAdminAlert_falhaNoEnvio_naoPropagaExcecao() {
+        doThrow(new MailSendException("SMTP fora")).when(mailSender).send(any(SimpleMailMessage.class));
+
+        assertDoesNotThrow(() -> emailService.sendAdminAlert("Assunto", "Texto"));
+    }
 }
