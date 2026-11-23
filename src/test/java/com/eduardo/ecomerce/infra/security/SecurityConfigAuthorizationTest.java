@@ -1,6 +1,7 @@
 package com.eduardo.ecomerce.infra.security;
 
 import com.eduardo.ecomerce.controller.AuthController;
+import com.eduardo.ecomerce.controller.InfinitePayController;
 import com.eduardo.ecomerce.controller.PaymentController;
 import com.eduardo.ecomerce.controller.ProductController;
 import com.eduardo.ecomerce.controller.OrderController;
@@ -12,6 +13,8 @@ import com.eduardo.ecomerce.service.OrderService;
 import com.eduardo.ecomerce.service.PaymentService;
 import com.eduardo.ecomerce.service.ProductService;
 import com.eduardo.ecomerce.service.bling.BlingOrderSyncService;
+import com.eduardo.ecomerce.service.payment.InfinitePayCheckoutService;
+import com.eduardo.ecomerce.service.payment.InfinitePayConfirmation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -37,7 +40,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.mockito.Mockito.when;
 
 @WebMvcTest(
-        controllers = {ProductController.class, AuthController.class, PaymentController.class, OrderController.class},
+        controllers = {ProductController.class, AuthController.class, PaymentController.class, OrderController.class,
+                InfinitePayController.class},
         properties = "app.cors.allowed-origins=http://localhost"
 )
 @Import({SecurityConfig.class, RateLimitFilter.class, JwtFilter.class})
@@ -69,6 +73,20 @@ class SecurityConfigAuthorizationTest {
 
     @MockitoBean
     private BlingOrderSyncService blingOrderSyncService;
+
+    @MockitoBean
+    private InfinitePayCheckoutService infinitePayCheckoutService;
+
+    @Test
+    @DisplayName("Webhook da InfinitePay é público (sem autenticação)")
+    void infinitePayWebhookIsPublic() throws Exception {
+        when(infinitePayCheckoutService.confirm("pedido", "trx", "abc")).thenReturn(InfinitePayConfirmation.NOT_PAID);
+
+        mockMvc.perform(post("/payments/infinitepay/webhook")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"order_nsu\":\"pedido\",\"transaction_nsu\":\"trx\",\"invoice_slug\":\"abc\"}"))
+                .andExpect(status().isOk());
+    }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("authorizationMatrix")
@@ -185,6 +203,16 @@ class SecurityConfigAuthorizationTest {
                         "criação de produto por usuário sem papel ADMIN",
                         post("/products").with(user("cliente").roles("USER")),
                         HttpStatus.FORBIDDEN.value()
+                ),
+                Arguments.of(
+                        "checkout InfinitePay sem autenticação",
+                        post("/payments/infinitepay/checkout"),
+                        HttpStatus.UNAUTHORIZED.value()
+                ),
+                Arguments.of(
+                        "confirmação InfinitePay sem autenticação",
+                        post("/payments/infinitepay/confirm"),
+                        HttpStatus.UNAUTHORIZED.value()
                 ),
                 Arguments.of(
                         "webhook de pagamento sem autenticação",
