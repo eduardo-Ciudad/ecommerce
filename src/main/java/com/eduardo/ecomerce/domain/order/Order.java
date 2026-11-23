@@ -157,7 +157,14 @@ public class Order {
         // Set.of(...).contains(null) lança NPE: paymentStatus pode ser nulo com paymentId preenchido
         // (ex.: pagamento órfão adotado pelo job de expiração), e nesse caso a tentativa conta como ativa.
         boolean failed = paymentStatus != null && FAILED_PAYMENT_STATUSES.contains(paymentStatus);
-        return paymentId != null && !failed;
+        return (paymentId != null && !failed) || hasOpenInfinitePayLink();
+    }
+
+    /** Link da InfinitePay criado e ainda não pago: bloqueia outra tentativa (ex.: Pix) para evitar pagamento em dobro. */
+    private boolean hasOpenInfinitePayLink() {
+        return paymentProvider == PaymentProvider.INFINITEPAY
+                && checkoutUrl != null
+                && "pending".equals(paymentStatus);
     }
 
     /** Pedido ainda pode receber uma nova tentativa de pagamento (dentro da janela de reserva). */
