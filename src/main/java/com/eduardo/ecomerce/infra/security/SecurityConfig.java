@@ -82,10 +82,13 @@ public class SecurityConfig {
 
                         // Webhooks públicos
                         .requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/payments/infinitepay/webhook").permitAll()
                         .requestMatchers("/bling/webhook").permitAll()
 
                         // Pedidos e dados do cliente autenticado
                         .requestMatchers(HttpMethod.POST, "/payments/process").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/payments/infinitepay/checkout").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/payments/infinitepay/confirm").authenticated()
                         .requestMatchers("/addresses/**").authenticated()
 
                         // Bling
