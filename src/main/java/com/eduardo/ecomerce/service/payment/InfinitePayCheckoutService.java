@@ -6,6 +6,7 @@ import com.eduardo.ecomerce.domain.order.OrderRepository;
 import com.eduardo.ecomerce.domain.order.OrderStatus;
 import com.eduardo.ecomerce.domain.order.PaymentProvider;
 import com.eduardo.ecomerce.dto.input.payment.InfinitePayCheckoutInput;
+import com.eduardo.ecomerce.dto.input.payment.InfinitePayReturnInput;
 import com.eduardo.ecomerce.dto.output.payment.InfinitePayCheckoutOutput;
 import com.eduardo.ecomerce.email.EmailService;
 import com.eduardo.ecomerce.infra.exception.BusinessException;
@@ -172,6 +173,19 @@ public class InfinitePayCheckoutService {
         log.info("Pagamento da InfinitePay confirmado — pedido {}, transação {}, {}x",
                 orderId, transactionNsu, check.installments());
         return InfinitePayConfirmation.PAID;
+    }
+
+    /** Confirmação disparada pela página de retorno: só o dono do pedido pode pedir. */
+    @Transactional
+    public InfinitePayConfirmation confirmForCustomer(InfinitePayReturnInput input, String customerEmail) {
+        UUID orderId = parseOrderId(input.orderNsu());
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new EntityNotFoundException("Pedido não encontrado"));
+
+        if (order.getUser() == null || !order.getUser().getEmail().equals(customerEmail)) {
+            throw new BusinessException("Pedido não pertence ao usuário autenticado");
+        }
+        return confirm(input.orderNsu(), input.transactionNsu(), input.slug());
     }
 
     private static UUID parseOrderId(String orderNsu) {
