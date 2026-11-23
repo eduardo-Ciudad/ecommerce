@@ -18,6 +18,7 @@ import com.mercadopago.client.preference.PreferenceItemRequest;
 import com.mercadopago.client.preference.PreferenceRequest;
 import com.mercadopago.net.MPSearchRequest;
 import com.mercadopago.resources.payment.Payment;
+import com.mercadopago.resources.payment.PaymentThreeDSInfo;
 import com.mercadopago.resources.preference.Preference;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -61,6 +62,8 @@ public class PaymentService {
     private String notificationUrl;
     private static final String STATEMENT_DESCRIPTOR = "GABIKIDS";
     private static final ZoneId STORE_ZONE = ZoneId.of("America/Sao_Paulo");
+    private static final String THREE_DS_MODE = "optional";
+    private static final String PENDING_CHALLENGE = "pending_challenge";
 
     private static final Set<String> CANCELLABLE_PAYMENT_STATUSES = Set.of("pending", "in_process", "authorized");
     // Status de um pagamento que ainda vale reaproveitar para o pedido. Pagamentos recusados
@@ -80,6 +83,10 @@ public class PaymentService {
         FOUND,
         AMBIGUOUS,
         FAILED
+    }
+
+    private record ThreeDsChallenge(String url, String creq) {
+        static final ThreeDsChallenge NONE = new ThreeDsChallenge(null, null);
     }
 
     public record OrphanedPaymentLookup(OrphanedPaymentOutcome outcome, Payment payment) {
@@ -147,6 +154,11 @@ public class PaymentService {
 
         switch (payment.getStatus()) {
             case "approved" -> markOrderPaid(order);
+            case "pending" -> {
+                if (PENDING_CHALLENGE.equals(payment.getStatusDetail())) {
+                    log.info("Pagamento {} aguardando desafio 3DS — Pedido: {}", payment.getId(), order.getId());
+                }
+            }
             case "rejected" -> log.warn("Pagamento recusado — Pedido: {}, Payment: {}, status_detail: {}. "
                             + "Pedido segue PENDING para nova tentativa até {}",
                     order.getId(), payment.getId(), payment.getStatusDetail(), order.getPaymentDeadline());
@@ -167,6 +179,8 @@ public class PaymentService {
             pixQrCodeBase64 = payment.getPointOfInteraction().getTransactionData().getQrCodeBase64();
         }
 
+        ThreeDsChallenge challenge = extractChallenge(payment);
+
         return new PaymentOutput(
                 payment.getId().toString(),
                 payment.getStatus(),
@@ -174,7 +188,9 @@ public class PaymentService {
                 input.paymentMethod(),
                 order.getTotal(),
                 pixQrCode,
-                pixQrCodeBase64
+                pixQrCodeBase64,
+                challenge.url(),
+                challenge.creq()
         );
     }
 
@@ -201,7 +217,10 @@ public class PaymentService {
                     .token(input.token())
                     .installments(input.installments() != null ? input.installments() : 1)
                     .paymentMethodId(input.cardIssuerId())
-                    .issuerId(blankToNull(input.issuerId()));
+                    .issuerId(blankToNull(input.issuerId()))
+                    .threeDSecureMode(THREE_DS_MODE)
+                    .binaryMode(false)
+                    .capture(true);
         } else if ("pix".equals(input.paymentMethod())) {
             requestBuilder.paymentMethodId("pix");
         }
@@ -216,6 +235,18 @@ public class PaymentService {
             log.error("Erro ao processar pagamento do pedido {}", order.getId(), e);
             throw new BusinessException("Erro ao processar pagamento. Tente novamente.");
         }
+    }
+
+    private static ThreeDsChallenge extractChallenge(Payment payment) {
+        if (!"pending".equals(payment.getStatus()) || !PENDING_CHALLENGE.equals(payment.getStatusDetail())) {
+            return ThreeDsChallenge.NONE;
+        }
+        PaymentThreeDSInfo info = payment.getThreeDSInfo();
+        if (info == null || info.getExternalResourceUrl() == null) {
+            log.warn("Pagamento {} em pending_challenge sem three_ds_info", payment.getId());
+            return ThreeDsChallenge.NONE;
+        }
+        return new ThreeDsChallenge(info.getExternalResourceUrl(), info.getCreq());
     }
 
     private static String resolvePayerName(Order order, PaymentInput input) {

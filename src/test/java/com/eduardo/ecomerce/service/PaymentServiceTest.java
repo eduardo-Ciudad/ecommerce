@@ -820,7 +820,7 @@ class PaymentServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(order.getPaidAt()).isNull();
         assertThat(order.getBlingSyncStatus()).isNull();
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(eventPublisher, never()).publishEvent(any(OrderPaidEvent.class));
     }
 
     @Test
@@ -860,7 +860,7 @@ class PaymentServiceTest {
         paymentService.processWebhook("1102");
 
         assertThat(order.getPaidAt()).isNull();
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(eventPublisher, never()).publishEvent(any(OrderPaidEvent.class));
     }
 
     @Test
@@ -873,7 +873,7 @@ class PaymentServiceTest {
 
         paymentService.processWebhook("1103");
 
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(eventPublisher, never()).publishEvent(any(OrderPaidEvent.class));
     }
 
     @Test
@@ -885,7 +885,7 @@ class PaymentServiceTest {
         paymentService.processWebhook("1104");
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(eventPublisher, never()).publishEvent(any(OrderPaidEvent.class));
     }
 
     @Test
@@ -1091,5 +1091,112 @@ class PaymentServiceTest {
 
         assertThat(request.getPayer().getFirstName()).isEqualTo("Maria");
         assertThat(request.getPayer().getLastName()).isNull();
+    }
+
+    // ---------- 3DS 2.0 ----------
+
+    @Test
+    void processPayment_cartao_enviaThreeDSecureModeOptionalSemBinaryMode() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null, null);
+        Payment payment = mockPayment("987654330", "approved", "accredited", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        ArgumentCaptor<PaymentCreateRequest> captor = ArgumentCaptor.forClass(PaymentCreateRequest.class);
+        when(paymentClient.create(captor.capture(), any(MPRequestOptions.class))).thenReturn(payment);
+
+        paymentService.processPayment(input, "cliente@teste.com");
+
+        PaymentCreateRequest request = captor.getValue();
+        assertThat(request.getThreeDSecureMode()).isEqualTo("optional");
+        assertThat(request.getBinaryMode()).isFalse();
+        assertThat(request.getCapture()).isTrue();
+    }
+
+    @Test
+    void processPayment_pix_naoEnviaThreeDSecureMode() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "pix", null, null, null, null, null, null, null, null, null);
+        Payment payment = mockPixPayment("987654331", "pending", orderId, "codigo-pix", "base64");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        ArgumentCaptor<PaymentCreateRequest> captor = ArgumentCaptor.forClass(PaymentCreateRequest.class);
+        when(paymentClient.create(captor.capture(), any(MPRequestOptions.class))).thenReturn(payment);
+
+        PaymentOutput result = paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(captor.getValue().getThreeDSecureMode()).isNull();
+        assertThat(result.threeDsUrl()).isNull();
+        assertThat(result.threeDsCreq()).isNull();
+    }
+
+    @Test
+    void processPayment_cartaoComChallenge_retornaUrlECreqEMantemPending() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null, null);
+        Payment payment = mockChallengePayment("987654332", "https://acs.banco.com/challenge", "creq-abc");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        PaymentOutput result = paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(result.status()).isEqualTo("pending");
+        assertThat(result.statusDetail()).isEqualTo("pending_challenge");
+        assertThat(result.threeDsUrl()).isEqualTo("https://acs.banco.com/challenge");
+        assertThat(result.threeDsCreq()).isEqualTo("creq-abc");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getPaymentId()).isEqualTo("987654332");
+        assertThat(order.getPaymentStatus()).isEqualTo("pending");
+        assertThat(order.hasActivePaymentAttempt()).isTrue();
+        verify(eventPublisher, never()).publishEvent(any(OrderPaidEvent.class));
+        verify(orderRepository).save(order);
+    }
+
+    @Test
+    void processPayment_cartaoAprovadoSemChallenge_naoRetornaDados3ds() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null, null);
+        Payment payment = mockPayment("987654333", "approved", "accredited", orderId);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        PaymentOutput result = paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(result.threeDsUrl()).isNull();
+        assertThat(result.threeDsCreq()).isNull();
+    }
+
+    @Test
+    void processPayment_pendingChallengeSemThreeDsInfo_naoQuebra() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null, null);
+        Payment payment = mockPayment("987654334", "pending", "pending_challenge", orderId);
+        when(payment.getThreeDSInfo()).thenReturn(null);
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        when(paymentClient.create(any(PaymentCreateRequest.class), any(MPRequestOptions.class))).thenReturn(payment);
+
+        PaymentOutput result = paymentService.processPayment(input, "cliente@teste.com");
+
+        assertThat(result.status()).isEqualTo("pending");
+        assertThat(result.threeDsUrl()).isNull();
+        assertThat(result.threeDsCreq()).isNull();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+    }
+
+    @Test
+    void processPayment_pagamentoReaproveitadoComChallenge_retornaDadosDoChallenge() throws Exception {
+        PaymentInput input = new PaymentInput(orderId, "credit_card", "tok_123", 1, "visa", null, null, null, null, null, null);
+        Payment payment = mockChallengePayment("987654335", "https://acs.banco.com/challenge", "creq-xyz");
+        when(orderRepository.findByIdForUpdate(orderId)).thenReturn(Optional.of(order));
+        doReturn(PaymentService.OrphanedPaymentLookup.found(payment))
+                .when(paymentService).findExistingPaymentForOrder(orderId, order.getTotal());
+
+        PaymentOutput result = paymentService.processPayment(input, user.getEmail());
+
+        assertThat(result.threeDsUrl()).isEqualTo("https://acs.banco.com/challenge");
+        assertThat(result.threeDsCreq()).isEqualTo("creq-xyz");
+        verify(paymentClient, never()).create(any(PaymentCreateRequest.class), any(MPRequestOptions.class));
+    }
+
+    private Payment mockChallengePayment(String id, String url, String creq) {
+        Payment payment = mockPayment(id, "pending", "pending_challenge", orderId);
+        PaymentThreeDSInfo threeDSInfo = mock(PaymentThreeDSInfo.class);
+        lenient().when(threeDSInfo.getExternalResourceUrl()).thenReturn(url);
+        lenient().when(threeDSInfo.getCreq()).thenReturn(creq);
+        lenient().when(payment.getThreeDSInfo()).thenReturn(threeDSInfo);
+        return payment;
     }
 }

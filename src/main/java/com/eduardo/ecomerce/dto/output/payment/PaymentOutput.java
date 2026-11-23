@@ -9,6 +9,8 @@ public record PaymentOutput(
         String paymentMethod,
         BigDecimal total,
         String pixQrCode,
-        String pixQrCodeBase64
+        String pixQrCodeBase64,
+        String threeDsUrl,
+        String threeDsCreq
 ) {
 }
