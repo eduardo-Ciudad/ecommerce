@@ -5,6 +5,7 @@ import com.eduardo.ecomerce.domain.blingsync.BlingSyncRunRepository;
 import com.eduardo.ecomerce.domain.blingsync.BlingSyncRunStatus;
 import com.eduardo.ecomerce.domain.blingsync.BlingSyncStep;
 import com.eduardo.ecomerce.dto.output.bling.BlingSyncStatusOutput;
+import com.eduardo.ecomerce.dto.output.bling.ProductResyncResult;
 import com.eduardo.ecomerce.dto.output.bling.SyncProductsResult;
 import com.eduardo.ecomerce.service.BlingService;
 import com.eduardo.ecomerce.service.bling.SyncProgressListener.ItemKind;
@@ -27,6 +28,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -350,6 +352,65 @@ class BlingFullSyncServiceTest {
         BlingSyncStatusOutput status = latest(service);
         assertThat(status.startedAt()).isEqualTo(LocalDateTime.of(2026, 11, 10, 14, 0));
         assertThat(status.finishedAt()).isEqualTo(LocalDateTime.of(2026, 11, 10, 14, 0));
+    }
+
+    // ---------- resyncProduct (um produto só, divide a trava com o sync completo) ----------
+
+    private static final UUID PRODUCT_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final ProductResyncResult RESYNC_RESULT =
+            new ProductResyncResult(PRODUCT_ID, "Conjunto", 3, 0, 0, 1);
+
+    @Test
+    void resyncProductDelegatesAndReleasesLockAfterwards() {
+        BlingFullSyncService service = directService();
+        when(blingService.resyncProduct(PRODUCT_ID)).thenReturn(RESYNC_RESULT);
+
+        assertThat(service.resyncProduct(PRODUCT_ID)).isEqualTo(RESYNC_RESULT);
+        assertThat(service.resyncProduct(PRODUCT_ID)).isEqualTo(RESYNC_RESULT);
+
+        verify(blingService, times(2)).resyncProduct(PRODUCT_ID);
+    }
+
+    @Test
+    void resyncProductIsRejectedWhileFullSyncIsRunning() {
+        BlingFullSyncService service = deferredService();
+        service.start();
+
+        assertThatThrownBy(() -> service.resyncProduct(PRODUCT_ID))
+                .isInstanceOf(BlingSyncAlreadyRunningException.class);
+        verify(blingService, never()).resyncProduct(any());
+    }
+
+    @Test
+    void fullSyncIsRejectedWhileResyncIsRunning() {
+        BlingFullSyncService service = deferredService();
+        AtomicReference<Throwable> startError = new AtomicReference<>();
+        when(blingService.resyncProduct(PRODUCT_ID)).thenAnswer(invocation -> {
+            try {
+                service.start();
+            } catch (Throwable e) {
+                startError.set(e);
+            }
+            return RESYNC_RESULT;
+        });
+
+        service.resyncProduct(PRODUCT_ID);
+
+        assertThat(startError.get()).isInstanceOf(BlingSyncAlreadyRunningException.class);
+        assertThat(pendingTasks).isEmpty();
+        verify(runRepository, never()).save(any(BlingSyncRun.class));
+    }
+
+    @Test
+    void resyncProductReleasesLockWhenDelegateThrows() {
+        BlingFullSyncService service = directService();
+        when(blingService.resyncProduct(PRODUCT_ID))
+                .thenThrow(new IllegalStateException("Bling fora do ar"))
+                .thenReturn(RESYNC_RESULT);
+
+        assertThatThrownBy(() -> service.resyncProduct(PRODUCT_ID))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(service.resyncProduct(PRODUCT_ID)).isEqualTo(RESYNC_RESULT);
     }
 
     private static Answer<SyncProductsResult> products(java.util.function.Consumer<SyncProgressListener> script) {

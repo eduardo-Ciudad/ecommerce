@@ -3,9 +3,12 @@ package com.eduardo.ecomerce.controller;
 import com.eduardo.ecomerce.domain.blingsync.BlingSyncRunStatus;
 import com.eduardo.ecomerce.domain.blingsync.BlingSyncStep;
 import com.eduardo.ecomerce.dto.output.bling.BlingSyncStatusOutput;
+import com.eduardo.ecomerce.dto.output.bling.ProductResyncResult;
 import com.eduardo.ecomerce.dto.output.bling.SyncProductsResult;
 import com.eduardo.ecomerce.infra.bling.BlingIntegrationException;
+import com.eduardo.ecomerce.infra.exception.BusinessException;
 import com.eduardo.ecomerce.infra.exception.GlobalExceptionHandler;
+import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import com.eduardo.ecomerce.service.BlingService;
 import com.eduardo.ecomerce.service.bling.BlingFullSyncService;
 import com.eduardo.ecomerce.service.bling.BlingSyncAlreadyRunningException;
@@ -39,6 +42,46 @@ class BlingControllerTest {
         mockMvc = standaloneSetup(new BlingController(blingService, blingFullSyncService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
+    }
+
+    private static final UUID PRODUCT_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+    @Test
+    void resyncProductReturnsSummary() throws Exception {
+        when(blingFullSyncService.resyncProduct(PRODUCT_ID))
+                .thenReturn(new ProductResyncResult(PRODUCT_ID, "Conjunto", 3, 0, 0, 1));
+
+        mockMvc.perform(post("/bling/sync/product/{id}", PRODUCT_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productId").value(PRODUCT_ID.toString()))
+                .andExpect(jsonPath("$.variantsSynced").value(3))
+                .andExpect(jsonPath("$.variantsZeroed").value(1));
+    }
+
+    @Test
+    void resyncProductWhileSyncIsRunningReturnsConflict() throws Exception {
+        when(blingFullSyncService.resyncProduct(PRODUCT_ID)).thenThrow(new BlingSyncAlreadyRunningException());
+
+        mockMvc.perform(post("/bling/sync/product/{id}", PRODUCT_ID))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void resyncUnknownProductReturnsNotFound() throws Exception {
+        when(blingFullSyncService.resyncProduct(PRODUCT_ID))
+                .thenThrow(new ResourceNotFoundException("Produto não encontrado"));
+
+        mockMvc.perform(post("/bling/sync/product/{id}", PRODUCT_ID))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void resyncProductNotLinkedToBlingReturnsUnprocessableEntity() throws Exception {
+        when(blingFullSyncService.resyncProduct(PRODUCT_ID))
+                .thenThrow(new BusinessException("Produto não está vinculado a um produto do Bling"));
+
+        mockMvc.perform(post("/bling/sync/product/{id}", PRODUCT_ID))
+                .andExpect(status().isUnprocessableEntity());
     }
 
     @Test

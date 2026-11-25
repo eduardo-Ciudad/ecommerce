@@ -16,11 +16,16 @@ import com.eduardo.ecomerce.domain.productspecification.ProductSpecification;
 import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
+import com.eduardo.ecomerce.dto.output.bling.ProductResyncResult;
 import com.eduardo.ecomerce.dto.output.bling.SyncProductsResult;
+import com.eduardo.ecomerce.infra.exception.BusinessException;
+import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
 import com.eduardo.ecomerce.infra.bling.BlingIntegrationException;
 import com.eduardo.ecomerce.infra.bling.BlingUnauthorizedException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
@@ -360,6 +365,101 @@ public class BlingService {
         return result;
     }
 
+    /**
+     * Ressincroniza um único produto com o Bling (botão do admin).
+     * Usa só o detalhe do produto pai: em data.variacoes o Bling já manda o detalhe completo de cada
+     * variação (estoque, GTIN, categoria, imagens, cor/tamanho), então é 1 chamada por produto.
+     * Nunca lista o catálogo nem desativa produtos; só zera o estoque das variantes deste produto
+     * que não vieram mais do Bling.
+     */
+    public ProductResyncResult resyncProduct(UUID productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado"));
+
+        Long blingProductId = product.getBlingProductId();
+        if (blingProductId == null) {
+            throw new BusinessException("Produto não está vinculado a um produto do Bling");
+        }
+
+        AtomicReference<String> tokenRef = new AtomicReference<>(getValidAccessToken());
+        JsonNode detail = fetchProductDetailOrNotFound(tokenRef, blingProductId);
+        JsonNode data = detail.path("data");
+
+        if (!"V".equals(data.path("formato").asText())) {
+            ProductListItem item = new ProductListItem(
+                    blingProductId,
+                    data.path("nome").asText(),
+                    data.path("codigo").asText(),
+                    new BigDecimal(data.path("preco").asText("0")),
+                    null,
+                    data.path("formato").asText("")
+            );
+            boolean synced = upsertProductSimples(tokenRef, item);
+            return new ProductResyncResult(productId, item.nome(), synced ? 1 : 0, synced ? 0 : 1, 0, 0);
+        }
+
+        String parentNome = data.path("nome").asText();
+        JsonNode variationNodes = data.path("variacoes");
+        if (!variationNodes.isArray() || variationNodes.isEmpty()) {
+            log.warn("Produto pai do Bling sem variações no detalhe (blingProductId={}), nada a ressincronizar", blingProductId);
+            return new ProductResyncResult(productId, parentNome, 0, 0, 0, 0);
+        }
+
+        MediaSyncState mediaState = new MediaSyncState();
+        Map<Long, String> parentNames = Map.of(blingProductId, parentNome);
+        Set<Long> listedVariationIds = new HashSet<>();
+        int synced = 0;
+        int skipped = 0;
+        int failed = 0;
+
+        for (JsonNode variationNode : variationNodes) {
+            ProductListItem item = new ProductListItem(
+                    variationNode.path("id").asLong(),
+                    variationNode.path("nome").asText(),
+                    variationNode.path("codigo").asText(),
+                    new BigDecimal(variationNode.path("preco").asText("0")),
+                    blingProductId,
+                    variationNode.path("formato").asText("")
+            );
+            listedVariationIds.add(item.id());
+
+            ObjectNode variationDetail = JsonNodeFactory.instance.objectNode();
+            variationDetail.set("data", variationNode);
+
+            try {
+                if (upsertVariationFromDetail(item, variationDetail, parentNames, mediaState)) {
+                    synced++;
+                } else {
+                    skipped++;
+                }
+            } catch (Exception e) {
+                log.error("Falha ao ressincronizar variação do Bling (id={}, blingProductId={})", item.id(), blingProductId, e);
+                failed++;
+            }
+        }
+
+        // usa todas as variações listadas pelo Bling (não só as que deram certo) pra não zerar estoque por falha de rede
+        Integer zeroed = transactionTemplate.execute(status ->
+                productVariantRepository.zeroStockOfVariantsMissingFromBling(productId, listedVariationIds));
+        int variantsZeroed = zeroed == null ? 0 : zeroed;
+        if (variantsZeroed > 0) {
+            log.info("{} variante(s) do produto {} com estoque zerado por não virem mais do Bling", variantsZeroed, productId);
+        }
+
+        return new ProductResyncResult(productId, parentNome, synced, skipped, failed, variantsZeroed);
+    }
+
+    private JsonNode fetchProductDetailOrNotFound(AtomicReference<String> tokenRef, Long blingProductId) {
+        try {
+            return callWithRetry(tokenRef, token -> blingClient.getProductById(token, blingProductId));
+        } catch (BlingIntegrationException e) {
+            if (Integer.valueOf(404).equals(e.getHttpStatus())) {
+                throw new ResourceNotFoundException("Produto não encontrado no Bling (id=" + blingProductId + ")");
+            }
+            throw e;
+        }
+    }
+
     private int reconcileRemovedProducts(ClassifiedListItems classified) {
         Set<Long> seenBlingProductIds = new HashSet<>(classified.parentNames().keySet());
         classified.standaloneItems().forEach(item -> seenBlingProductIds.add(item.id()));
@@ -447,7 +547,20 @@ public class BlingService {
             MediaSyncState mediaState
     ) {
         JsonNode detail = callWithRetry(tokenRef, token -> blingClient.getProductById(token, item.id()));
+        return upsertVariationFromDetail(item, detail, parentNames, mediaState);
+    }
 
+    /**
+     * Grava a variação a partir do detalhe já obtido do Bling (formato {"data": {...}}).
+     * Usado pelo sync completo (detalhe buscado por variação) e pela ressincronização de um produto
+     * (detalhe embutido em data.variacoes do produto pai).
+     */
+    private boolean upsertVariationFromDetail(
+            ProductListItem item,
+            JsonNode detail,
+            Map<Long, String> parentNames,
+            MediaSyncState mediaState
+    ) {
         Long blingCategoryId = extractCategoryId(detail);
         Integer stock = extractStock(detail);
         String gtin = extractGtin(detail);
@@ -609,6 +722,7 @@ public class BlingService {
 
         Product product = existing.get();
         product.setActive(true);
+        product.setName(nome);
 
         Long currentCategoryId = product.getCategory() != null
                 ? product.getCategory().getBlingCategoryId()

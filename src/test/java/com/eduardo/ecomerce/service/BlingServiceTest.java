@@ -12,7 +12,11 @@ import com.eduardo.ecomerce.domain.productimage.ProductImageRepository;
 import com.eduardo.ecomerce.domain.productspecification.ProductSpecificationRepository;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariant;
 import com.eduardo.ecomerce.domain.productvariant.ProductVariantRepository;
+import com.eduardo.ecomerce.dto.output.bling.ProductResyncResult;
 import com.eduardo.ecomerce.infra.bling.BlingClient;
+import com.eduardo.ecomerce.infra.bling.BlingIntegrationException;
+import com.eduardo.ecomerce.infra.exception.BusinessException;
+import com.eduardo.ecomerce.infra.exception.ResourceNotFoundException;
 import com.eduardo.ecomerce.infra.bling.BlingUnauthorizedException;
 import com.eduardo.ecomerce.service.bling.SyncProgressListener;
 import com.eduardo.ecomerce.service.bling.SyncProgressListener.ItemKind;
@@ -35,8 +39,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.util.Arrays.sizeOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -359,6 +365,261 @@ class BlingServiceTest {
         assertThat(result).isSameAs(expected);
         assertThat(tokensUsed).containsExactly("token", "new-token");
         verify(blingClient).refreshAccessToken("refresh");
+    }
+
+    // ---------- resyncProduct (botão do admin: ressincronizar um produto) ----------
+
+    private static final UUID PRODUCT_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+    private Product existingProduct(Long blingProductId, Category category) {
+        Product product = new Product();
+        product.setId(PRODUCT_ID);
+        product.setBlingProductId(blingProductId);
+        product.setName("Nome antigo");
+        product.setCategory(category);
+        return product;
+    }
+
+    private Category category77() {
+        Category category = new Category();
+        category.setBlingCategoryId(77L);
+        return category;
+    }
+
+    @Test
+    void resyncProductUsesOnlyParentDetailAndSyncsEveryEmbeddedVariation() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = category77();
+        Product product = existingProduct(700L, category);
+
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
+        when(blingClient.getProductById("token", 700L)).thenReturn(json("""
+            {"data":{"id":700,"nome":"Conjunto Dino Skatista","codigo":"PAI-700","preco":54.99,"formato":"V",
+              "variacoes":[
+                {"id":801,"nome":"Conjunto Dino cor:vermelho e chumbo;tamanho:1","codigo":"SKU-801","preco":54.99,"formato":"S",
+                 "estoque":{"saldoVirtualTotal":1},"gtin":"7900257380456","categoria":{"id":77},
+                 "variacao":{"nome":"cor:vermelho e chumbo;tamanho:1","produtoPai":{"id":700}}},
+                {"id":802,"nome":"Conjunto Dino cor:vermelho e chumbo;tamanho:2","codigo":"SKU-802","preco":54.99,"formato":"S",
+                 "estoque":{"saldoVirtualTotal":2},"gtin":"7900257380463","categoria":{"id":77},
+                 "variacao":{"nome":"cor:vermelho e chumbo;tamanho:2","produtoPai":{"id":700}}}
+              ]}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(700L)).thenReturn(Optional.of(product));
+        when(productVariantRepository.findByBlingVariationId(any())).thenReturn(Optional.empty());
+        when(productVariantRepository.findBySku(any())).thenReturn(Optional.empty());
+
+        ProductResyncResult result = service.resyncProduct(PRODUCT_ID);
+
+        verify(blingClient, times(1)).getProductById(any(), any());
+        verify(blingClient).getProductById("token", 700L);
+        verify(blingClient, never()).listProducts(any(), anyInt());
+        verify(productRepository, never()).deactivateMissingFromBling(any());
+
+        ArgumentCaptor<ProductVariant> captor = ArgumentCaptor.forClass(ProductVariant.class);
+        verify(productVariantRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(ProductVariant::getBlingVariationId).containsExactly(801L, 802L);
+        assertThat(captor.getAllValues()).extracting(ProductVariant::getSku).containsExactly("SKU-801", "SKU-802");
+        assertThat(captor.getAllValues()).extracting(ProductVariant::getSize).containsExactly("1", "2");
+        assertThat(captor.getAllValues()).extracting(ProductVariant::getColor)
+                .containsExactly("vermelho e chumbo", "vermelho e chumbo");
+        assertThat(captor.getAllValues()).extracting(ProductVariant::getStock).containsExactly(1, 2);
+        assertThat(captor.getAllValues()).extracting(ProductVariant::getGtin)
+                .containsExactly("7900257380456", "7900257380463");
+        assertThat(captor.getAllValues().get(0).getPrice()).isEqualByComparingTo("54.99");
+
+        assertThat(product.getName()).isEqualTo("Conjunto Dino Skatista");
+        assertThat(result).isEqualTo(new ProductResyncResult(PRODUCT_ID, "Conjunto Dino Skatista", 2, 0, 0, 0));
+    }
+
+    @Test
+    void resyncProductResetsMediaOnceAndKeepsOneGalleryPerColor() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = category77();
+        Product product = existingProduct(500L, category);
+
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
+        when(blingClient.getProductById("token", 500L)).thenReturn(json("""
+            {"data":{"id":500,"nome":"Short Moletinho","formato":"V","variacoes":[
+              {"id":501,"codigo":"SKU-501","preco":34.99,"categoria":{"id":77},"estoque":{"saldoVirtualTotal":3},
+               "variacao":{"nome":"Cor:Preto;Tamanho:4"},
+               "midia":{"imagens":{"internas":[{"link":"https://bling.example/preto.jpg?sig=1"}]}}},
+              {"id":502,"codigo":"SKU-502","preco":34.99,"categoria":{"id":77},"estoque":{"saldoVirtualTotal":2},
+               "variacao":{"nome":"Cor:Rosa;Tamanho:4"},
+               "midia":{"imagens":{"internas":[{"link":"https://bling.example/rosa.jpg?sig=1"}]}}}
+            ]}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(500L)).thenReturn(Optional.of(product));
+        when(blingImageSyncService.syncImages(eq(500L), eq("Preto"), any())).thenReturn(List.of(
+                new BlingImageSyncService.UploadedImage("https://r2.example/preto.jpg", "https://r2.example/preto_thumb.jpg", 0)));
+        when(blingImageSyncService.syncImages(eq(500L), eq("Rosa"), any())).thenReturn(List.of(
+                new BlingImageSyncService.UploadedImage("https://r2.example/rosa.jpg", "https://r2.example/rosa_thumb.jpg", 1)));
+
+        service.resyncProduct(PRODUCT_ID);
+
+        verify(blingImageSyncService).syncImages(500L, "Rosa",
+                List.of(new BlingImageSyncService.SourceImage("https://bling.example/rosa.jpg?sig=1", 1)));
+        verify(productImageRepository, times(1)).deleteByProductIdAndSource(PRODUCT_ID, ImageSource.BLING);
+
+        ArgumentCaptor<ProductImage> captor = ArgumentCaptor.forClass(ProductImage.class);
+        verify(productImageRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(ProductImage::getColor).containsExactly("Preto", "Rosa");
+        assertThat(product.getImageUrl()).isEqualTo("https://r2.example/preto.jpg");
+    }
+
+    @Test
+    void resyncProductKeepsGoingWhenOneVariationFailsAndZeroesUsingEveryListedVariation() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = category77();
+        Product product = existingProduct(700L, category);
+
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
+        when(blingClient.getProductById("token", 700L)).thenReturn(json("""
+            {"data":{"id":700,"nome":"Conjunto","formato":"V","variacoes":[
+              {"id":801,"codigo":"SKU-801","preco":10,"categoria":{"id":77},"estoque":{"saldoVirtualTotal":1},
+               "variacao":{"nome":"tamanho:1"}},
+              {"id":802,"codigo":"SKU-802","preco":10,"categoria":{"id":77},"estoque":{"saldoVirtualTotal":1},
+               "variacao":{"nome":"tamanho:2"}}
+            ]}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(700L)).thenReturn(Optional.of(product));
+        when(productVariantRepository.findByBlingVariationId(801L)).thenReturn(Optional.empty());
+        when(productVariantRepository.findBySku("SKU-801")).thenReturn(Optional.empty());
+        when(productVariantRepository.findByBlingVariationId(802L)).thenThrow(new IllegalStateException("banco fora"));
+        when(productVariantRepository.zeroStockOfVariantsMissingFromBling(PRODUCT_ID, Set.of(801L, 802L))).thenReturn(1);
+
+        ProductResyncResult result = service.resyncProduct(PRODUCT_ID);
+
+        verify(productVariantRepository).zeroStockOfVariantsMissingFromBling(PRODUCT_ID, Set.of(801L, 802L));
+        assertThat(result).isEqualTo(new ProductResyncResult(PRODUCT_ID, "Conjunto", 1, 0, 1, 1));
+    }
+
+    @Test
+    void resyncProductDoesNotTouchVariantsWhenBlingReturnsNoVariations() throws Exception {
+        validToken();
+        Product product = existingProduct(700L, category77());
+
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
+        when(blingClient.getProductById("token", 700L)).thenReturn(json("""
+            {"data":{"id":700,"nome":"Conjunto","formato":"V","variacoes":[]}}
+            """));
+
+        ProductResyncResult result = service.resyncProduct(PRODUCT_ID);
+
+        verify(productVariantRepository, never()).zeroStockOfVariantsMissingFromBling(any(), any());
+        verify(productVariantRepository, never()).save(any());
+        assertThat(result).isEqualTo(new ProductResyncResult(PRODUCT_ID, "Conjunto", 0, 0, 0, 0));
+    }
+
+    @Test
+    void resyncProductUpdatesSimpleProductWithoutZeroingVariants() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = category77();
+        Product product = existingProduct(900L, category);
+
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
+        when(blingClient.getProductById("token", 900L)).thenReturn(json("""
+            {"data":{"id":900,"nome":"Body Liso","codigo":"SKU-900","preco":19.90,"formato":"S",
+              "categoria":{"id":77},"estoque":{"saldoVirtualTotal":4}}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(900L)).thenReturn(Optional.of(product));
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productVariantRepository.findBySku("SKU-900")).thenReturn(Optional.empty());
+
+        ProductResyncResult result = service.resyncProduct(PRODUCT_ID);
+
+        ArgumentCaptor<ProductVariant> captor = ArgumentCaptor.forClass(ProductVariant.class);
+        verify(productVariantRepository).save(captor.capture());
+        assertThat(captor.getValue().getStock()).isEqualTo(4);
+        assertThat(captor.getValue().getSku()).isEqualTo("SKU-900");
+        assertThat(product.getName()).isEqualTo("Body Liso");
+        verify(productVariantRepository, never()).zeroStockOfVariantsMissingFromBling(any(), any());
+        assertThat(result).isEqualTo(new ProductResyncResult(PRODUCT_ID, "Body Liso", 1, 0, 0, 0));
+    }
+
+    @Test
+    void resyncProductThrowsNotFoundWhenProductDoesNotExist() {
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.resyncProduct(PRODUCT_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(blingClient);
+    }
+
+    @Test
+    void resyncProductRejectsProductNotLinkedToBling() {
+        Product product = existingProduct(null, category77());
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> service.resyncProduct(PRODUCT_ID))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(blingClient);
+    }
+
+    @Test
+    void resyncProductThrowsNotFoundWhenBlingAnswers404() {
+        validToken();
+        Product product = existingProduct(700L, category77());
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
+        when(blingClient.getProductById("token", 700L))
+                .thenThrow(new BlingIntegrationException("não encontrado", null, 404, null, null));
+
+        assertThatThrownBy(() -> service.resyncProduct(PRODUCT_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(productVariantRepository, never()).save(any());
+    }
+
+    @Test
+    void resyncProductPropagatesOtherBlingErrors() {
+        validToken();
+        Product product = existingProduct(700L, category77());
+        when(productRepository.findById(PRODUCT_ID)).thenReturn(Optional.of(product));
+        when(blingClient.getProductById("token", 700L))
+                .thenThrow(new BlingIntegrationException("fora do ar", null, 503, null, null));
+
+        assertThatThrownBy(() -> service.resyncProduct(PRODUCT_ID))
+                .isInstanceOf(BlingIntegrationException.class);
+    }
+
+    @Test
+    void syncProductsUpdatesNameOfExistingParentProduct() throws Exception {
+        when(transactionManager.getTransaction(any(DefaultTransactionDefinition.class)))
+                .thenReturn(transactionStatus);
+        validToken();
+        Category category = category77();
+        Product product = existingProduct(500L, category);
+
+        when(blingClient.listProducts("token", 1)).thenReturn(json("""
+            {"data":[
+              {"id":500,"nome":"Nome novo","codigo":"PAI-500","preco":"34.99","formato":"V"},
+              {"id":501,"nome":"Nome novo 4","codigo":"SKU-501","preco":"34.99","formato":"S","idProdutoPai":500}
+            ]}
+            """));
+        when(blingClient.listProducts("token", 2)).thenReturn(json("""
+            {"data":[]}
+            """));
+        when(blingClient.getProductById("token", 501L)).thenReturn(json("""
+            {"data":{"categoria":{"id":77},"estoque":{"saldoVirtualTotal":1},"variacao":{"nome":"Tamanho:4"}}}
+            """));
+        when(categoryRepository.findByBlingCategoryId(77L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBlingProductId(500L)).thenReturn(Optional.of(product));
+        when(productVariantRepository.findByBlingVariationId(501L)).thenReturn(Optional.empty());
+        when(productVariantRepository.findBySku("SKU-501")).thenReturn(Optional.empty());
+
+        service.syncProducts();
+
+        assertThat(product.getName()).isEqualTo("Nome novo");
     }
 
     private void validToken() {

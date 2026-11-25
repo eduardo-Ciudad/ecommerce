@@ -2,6 +2,7 @@ package com.eduardo.ecomerce.controller;
 
 import com.eduardo.ecomerce.dto.output.bling.AuthorizationUrlOutput;
 import com.eduardo.ecomerce.dto.output.bling.BlingSyncStatusOutput;
+import com.eduardo.ecomerce.dto.output.bling.ProductResyncResult;
 import com.eduardo.ecomerce.dto.output.bling.SyncProductsResult;
 import com.eduardo.ecomerce.service.BlingService;
 import com.eduardo.ecomerce.service.bling.BlingFullSyncService;
@@ -12,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.util.UUID;
 
  @Slf4j
 @RestController
@@ -56,6 +58,12 @@ public class BlingController {
     @PostMapping("/sync/full")
     public ResponseEntity<BlingSyncStatusOutput> startFullSync() {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(blingFullSyncService.start());
+    }
+
+    /** Ressincroniza só um produto (botão do admin); 409 se o sync completo estiver rodando. */
+    @PostMapping("/sync/product/{productId}")
+    public ResponseEntity<ProductResyncResult> resyncProduct(@PathVariable UUID productId) {
+        return ResponseEntity.ok(blingFullSyncService.resyncProduct(productId));
     }
 
     @GetMapping("/sync/status")

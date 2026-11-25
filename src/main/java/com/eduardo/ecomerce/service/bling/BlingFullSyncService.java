@@ -6,6 +6,7 @@ import com.eduardo.ecomerce.domain.blingsync.BlingSyncRunStatus;
 import com.eduardo.ecomerce.domain.blingsync.BlingSyncStep;
 import com.eduardo.ecomerce.dto.output.bling.BlingSyncEventOutput;
 import com.eduardo.ecomerce.dto.output.bling.BlingSyncStatusOutput;
+import com.eduardo.ecomerce.dto.output.bling.ProductResyncResult;
 import com.eduardo.ecomerce.service.BlingService;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -109,6 +111,21 @@ public class BlingFullSyncService {
             throw e;
         }
         return accepted;
+    }
+
+    /**
+     * Ressincroniza um único produto (síncrono). Divide a mesma trava do sync completo:
+     * os dois escreveriam imagens e estoque do mesmo produto ao mesmo tempo.
+     */
+    public ProductResyncResult resyncProduct(UUID productId) {
+        if (!running.compareAndSet(false, true)) {
+            throw new BlingSyncAlreadyRunningException();
+        }
+        try {
+            return blingService.resyncProduct(productId);
+        } finally {
+            running.set(false);
+        }
     }
 
     void execute(BlingSyncRun run) {

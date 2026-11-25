@@ -1,8 +1,11 @@
 package com.eduardo.ecomerce.domain.productvariant;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,6 +14,16 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
 
     Optional<ProductVariant> findByBlingVariationId(Long blingVariationId);
     Optional<ProductVariant> findBySku(String sku);
+
+    @Modifying
+    @Query("""
+            UPDATE ProductVariant v SET v.stock = 0
+            WHERE v.product.id = :productId
+              AND v.stock > 0
+              AND (v.blingVariationId IS NULL OR v.blingVariationId NOT IN :listedIds)
+            """)
+    int zeroStockOfVariantsMissingFromBling(@Param("productId") UUID productId,
+                                            @Param("listedIds") Collection<Long> listedIds);
 
     @Query("""
             SELECT v FROM ProductVariant v
